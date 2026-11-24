@@ -17,3 +17,9 @@ __pycache__/
 .DS_Store
 generated/
 .terraform.lock.hcl
+
+# Real environment values (domain, cloud project ID, notes). Never commit these.
+local/
+*.local.yml
+*.local.env
+*.local.sh

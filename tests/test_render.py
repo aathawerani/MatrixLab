@@ -708,19 +708,32 @@ class GcpProjectOverride(unittest.TestCase):
 
 
 class PublicRepositoryHygiene(unittest.TestCase):
-    """This repository is public: no real project IDs, domains, schedules or internal notes."""
+    """This repository is public: no real project IDs, company names, schedules or internal notes.
 
-    FORBIDDEN = ["matrix-agent-oracle", "aimarks", "PKT", "INFRASTRUCTURE_HANDOFF", "handoff"]
+    Sensitive words are stored only as SHA-256 digests so this test does not publish them.
+    """
+
+    FORBIDDEN_DIGESTS = {
+        "d030ad18af792d92a7e331c248c869c2d76b5785b75b76affde38a98ab04b1e2",
+        "c56cefcceab38233adb071cd2c3fd8708d39ab22b3c33e5445837e767cb3015b",
+        "48144521160e3c293c9c9c0982b374fc344b80b07ac748ad82a351cfb999a2ae",
+    }
+    FORBIDDEN_WORDS = ["pkt", "infrastructure_handoff", "handoff"]
 
     def test_no_internal_identifiers_in_tracked_text(self):
+        import hashlib
+        import re
         hits = []
         for path in REPO.rglob("*"):
             if not path.is_file() or ".git" in path.parts or "__pycache__" in path.parts:
                 continue
             if path.suffix not in {".md", ".yml", ".yaml", ".py", ".tf", ".j2", ".sh", ".zsh", ".rb", ".toml", ".cfg", ""}:
                 continue
-            if path.name == "test_render.py":
-                continue
             text = path.read_text(errors="ignore").lower()
-            hits += [f"{path.relative_to(REPO)}: {w}" for w in self.FORBIDDEN if w.lower() in text]
+            rel = path.relative_to(REPO)
+            for token in set(re.findall(r"[a-z0-9-]+", text)):
+                if hashlib.sha256(token.encode()).hexdigest() in self.FORBIDDEN_DIGESTS:
+                    hits.append(f"{rel}: forbidden identifier")
+            if path.name != "test_render.py":
+                hits += [f"{rel}: {w}" for w in self.FORBIDDEN_WORDS if w in text]
         self.assertEqual(hits, [])
