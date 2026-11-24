@@ -1,0 +1,37 @@
+# Managed by Ansible. PostgreSQL is external; Redis is private to this project.
+name: nextcloud
+services:
+  app:
+    image: "{{ matrix_images.nextcloud }}@{{ matrix_image_digests.nextcloud }}"
+    restart: unless-stopped
+    environment:
+{{ matrix_nextcloud_runtime_env | combine({'POSTGRES_HOST': (matrix_database_connections.nextcloud.host ~ ':' ~ (matrix_database_connections.nextcloud.port | string)), 'POSTGRES_DB': matrix_database_connections.nextcloud.database, 'POSTGRES_USER': matrix_database_connections.nextcloud.user, 'REDIS_HOST': 'redis', 'REDIS_HOST_PORT': '6379'}) | to_nice_yaml(indent=6) | indent(6, true) }}
+    volumes:
+      - "{{ matrix_nextcloud_html_dir }}:/var/www/html"
+      - "{{ matrix_nextcloud_data_dir }}:/var/www/data"
+    ports:
+{% for address in matrix_binds.nextcloud.http.addresses %}
+      - "{{ address }}:{{ matrix_binds.nextcloud.http.port }}:80"
+{% endfor %}
+    depends_on: [redis]
+    networks: [app]
+  cron:
+    image: "{{ matrix_images.nextcloud }}@{{ matrix_image_digests.nextcloud }}"
+    restart: unless-stopped
+    entrypoint: /cron.sh
+    environment:
+{{ matrix_nextcloud_runtime_env | combine({'POSTGRES_HOST': (matrix_database_connections.nextcloud.host ~ ':' ~ (matrix_database_connections.nextcloud.port | string)), 'POSTGRES_DB': matrix_database_connections.nextcloud.database, 'POSTGRES_USER': matrix_database_connections.nextcloud.user, 'REDIS_HOST': 'redis', 'REDIS_HOST_PORT': '6379'}) | to_nice_yaml(indent=6) | indent(6, true) }}
+    volumes:
+      - "{{ matrix_nextcloud_html_dir }}:/var/www/html"
+      - "{{ matrix_nextcloud_data_dir }}:/var/www/data"
+    depends_on: [redis]
+    networks: [app]
+  redis:
+    image: "{{ matrix_components.nextcloud.redis.image }}@{{ matrix_components.nextcloud.redis.observed_digest }}"
+    restart: unless-stopped
+    volumes: ["redisdata:/data"]
+    networks: [app]
+networks:
+  app: {}
+volumes:
+  redisdata: {}

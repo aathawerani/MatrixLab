@@ -1,0 +1,19 @@
+# {{ inventory_hostname }} ({{ matrix_node }}, {{ matrix_private_ip }}) — {{ matrix_provider }}/{{ matrix_environment }}
+applications: {{ matrix_applications | to_json }}
+versions: {{ matrix_versions | to_json }}
+consumes:
+{% for app, ports in matrix_endpoints | dictsort %}
+{% for name, ep in ports | dictsort %}
+  {{ app }}.{{ name }}: {{ ep.host }}:{{ ep.port }}{{ '  # same node' if ep.same_node else '' }}
+{% endfor %}
+{% else %}
+  {}
+{% endfor %}
+listens:
+{% for app, ports in matrix_binds | dictsort %}
+{% for name, b in ports | dictsort %}
+  {{ app }}.{{ name }}: {{ b.addresses | map('regex_replace', '$', ':' ~ b.port) | join(', ') }}
+{% endfor %}
+{% else %}
+  {}
+{% endfor %}

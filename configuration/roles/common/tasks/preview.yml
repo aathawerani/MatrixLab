@@ -1,0 +1,17 @@
+- name: Create preview directory
+  ansible.builtin.file: {path: "{{ matrix_preview_root }}", state: directory, mode: "0755"}
+  delegate_to: localhost
+
+- name: Resolved placement for this host
+  ansible.builtin.template: {src: resolved.yml.j2, dest: "{{ matrix_preview_root }}/resolved.yml", mode: "0644"}
+  delegate_to: localhost
+
+- name: Kernel settings directory
+  ansible.builtin.file: {path: "{{ matrix_preview_root }}/etc/sysctl.d", state: directory, mode: "0755"}
+  delegate_to: localhost
+  when: matrix_sysctls | length > 0
+
+- name: Kernel settings
+  ansible.builtin.template: {src: 90-matrix.conf.j2, dest: "{{ matrix_preview_root }}/etc/sysctl.d/90-matrix.conf", mode: "0644"}
+  delegate_to: localhost
+  when: matrix_sysctls | length > 0

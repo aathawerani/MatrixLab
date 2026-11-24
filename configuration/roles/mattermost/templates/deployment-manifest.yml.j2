@@ -1,0 +1,24 @@
+# Secret-free Mattermost deployment manifest.
+application: mattermost
+version: "{{ matrix_versions.mattermost }}"
+package: mattermost
+package_version: "{{ matrix_versions.mattermost }}-0"
+placement: "{{ matrix_node }}"
+private_ip: "{{ matrix_private_ip }}"
+listen_addresses:
+{% for address in matrix_binds.mattermost.http.addresses %}
+  - "{{ address }}"
+{% endfor %}
+listen_port: {{ matrix_binds.mattermost.http.port }}
+database:
+  host: "{{ matrix_database_connections.mattermost.host }}"
+  port: {{ matrix_database_connections.mattermost.port }}
+  name: "{{ matrix_database_connections.mattermost.database }}"
+  user: "{{ matrix_database_connections.mattermost.user }}"
+data_directory: /opt/mattermost/data
+systemd:
+  unit: mattermost
+  user: mattermost
+  group: mattermost
+  limit_nofile: 49152
+secret_configuration_required: true

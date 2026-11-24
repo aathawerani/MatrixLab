@@ -1,0 +1,4 @@
+# Managed by Ansible (matrix-environment). Derived from the apps placed on this host.
+{% for key, value in matrix_sysctls | dictsort %}
+{{ key }} = {{ value }}
+{% endfor %}

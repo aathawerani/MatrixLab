@@ -1,0 +1,65 @@
+---
+- name: Require explicit approval before changing Nextcloud
+  ansible.builtin.assert:
+    that: [matrix_allow_changes | default(false) | bool]
+    fail_msg: "Nextcloud changes require -e matrix_allow_changes=true."
+
+- name: Validate generated placement, pinned images, and first-install inputs
+  ansible.builtin.assert:
+    that:
+      - matrix_database_connections.nextcloud.host is defined
+      - matrix_database_connections.nextcloud.port == 5432
+      - matrix_database_connections.nextcloud.database == 'nextcloud'
+      - matrix_images.nextcloud is defined
+      - matrix_image_digests.nextcloud is match('^sha256:[0-9a-f]{64}$')
+      - matrix_components.nextcloud.redis.observed_digest is match('^sha256:[0-9a-f]{64}$')
+      - matrix_nextcloud_runtime_env is mapping
+      - (matrix_nextcloud_required_env | difference(matrix_nextcloud_runtime_env.keys() | list) | length) == 0
+    fail_msg: >-
+      Supply Nextcloud first-install administrator credentials and PostgreSQL
+      password through Ansible Vault or an approved external secret provider.
+  no_log: true
+
+- name: Require Docker Engine and Compose plugin
+  ansible.builtin.command: docker compose version
+  changed_when: false
+
+- name: Create Nextcloud clean-install directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "33"
+    group: "33"
+    mode: "0750"
+  loop:
+    - "{{ matrix_nextcloud_root }}"
+    - "{{ matrix_nextcloud_html_dir }}"
+    - "{{ matrix_nextcloud_data_dir }}"
+
+- name: Render protected Nextcloud Compose definition
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ matrix_nextcloud_compose_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate Nextcloud Compose configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_nextcloud_root }}", -f, "{{ matrix_nextcloud_compose_file }}", config, --quiet]
+  changed_when: false
+  no_log: true
+
+- name: Start Nextcloud services
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_nextcloud_root }}", -f, "{{ matrix_nextcloud_compose_file }}", up, -d]
+  changed_when: true
+  no_log: true
+
+- name: Wait for Nextcloud application listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ matrix_binds.nextcloud.http.port }}"
+    state: started
+    timeout: 300

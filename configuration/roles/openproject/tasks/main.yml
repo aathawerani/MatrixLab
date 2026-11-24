@@ -1,0 +1,79 @@
+---
+- name: Require explicit approval before changing OpenProject
+  ansible.builtin.assert:
+    that: [matrix_allow_changes | default(false) | bool]
+    fail_msg: "OpenProject changes require -e matrix_allow_changes=true."
+
+- name: Validate generated placement, pinned images, and runtime inputs
+  ansible.builtin.assert:
+    that:
+      - matrix_database_connections.openproject.host is defined
+      - matrix_database_connections.openproject.port == 5432
+      - matrix_database_connections.openproject.database == 'openproject'
+      - matrix_images.openproject is defined
+      - matrix_image_digests.openproject is match('^sha256:[0-9a-f]{64}$')
+      - matrix_components.openproject.hocuspocus.observed_digest is match('^sha256:[0-9a-f]{64}$')
+      - matrix_components.openproject.cache.observed_digest is match('^sha256:[0-9a-f]{64}$')
+      - matrix_openproject_runtime_env is mapping
+      - (matrix_openproject_required_env | difference(matrix_openproject_runtime_env.keys() | list) | length) == 0
+      - matrix_openproject_hocuspocus_env is mapping
+      - matrix_openproject_hocuspocus_env | length > 0
+      - matrix_openproject_proxy_base_image is match('^.+@sha256:[0-9a-f]{64}$')
+      - matrix_openproject_proxy_app_host | length > 0
+    fail_msg: >-
+      Supply OpenProject and Hocuspocus runtime settings from Ansible Vault, and
+      a Caddy base image pinned by registry digest. This role will not use a
+      mutable proxy base-image tag.
+  no_log: true
+
+- name: Require Docker Engine and Compose plugin
+  ansible.builtin.command: docker compose version
+  changed_when: false
+
+- name: Create OpenProject deployment directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ matrix_openproject_root }}", mode: "0750"}
+    - {path: "{{ matrix_openproject_root }}/proxy", mode: "0750"}
+
+- name: Install captured OpenProject proxy build context
+  ansible.builtin.copy:
+    src: proxy/
+    dest: "{{ matrix_openproject_root }}/proxy/"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Render protected OpenProject Compose definition
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ matrix_openproject_compose_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate OpenProject Compose configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_openproject_root }}", -f, "{{ matrix_openproject_compose_file }}", config, --quiet]
+  changed_when: false
+  no_log: true
+
+- name: Start OpenProject services
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_openproject_root }}", -f, "{{ matrix_openproject_compose_file }}", up, -d, --build]
+  register: matrix_openproject_up
+  changed_when: true
+  no_log: true
+
+- name: Wait for OpenProject proxy listener
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ matrix_binds.openproject.http.port }}"
+    state: started
+    timeout: 300

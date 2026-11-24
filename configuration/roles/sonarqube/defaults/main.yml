@@ -1,0 +1,6 @@
+---
+matrix_sonarqube_root: /srv/alitech/services/sonarqube
+matrix_sonarqube_compose_file: "{{ matrix_sonarqube_root }}/compose.yaml"
+matrix_sonarqube_runtime_env: {}
+matrix_sonarqube_required_env:
+  - SONAR_JDBC_PASSWORD

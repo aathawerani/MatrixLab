@@ -1,0 +1,14 @@
+---
+- name: Create Mattermost preview directory
+  ansible.builtin.file:
+    path: "{{ matrix_preview_root }}/opt/mattermost"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+- name: Write secret-free Mattermost deployment manifest
+  ansible.builtin.template:
+    src: deployment-manifest.yml.j2
+    dest: "{{ matrix_preview_root }}/opt/mattermost/deployment-manifest.yml"
+    mode: "0644"
+  delegate_to: localhost

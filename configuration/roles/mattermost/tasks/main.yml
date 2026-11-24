@@ -1,0 +1,101 @@
+---
+- name: Require explicit approval before changing Mattermost
+  ansible.builtin.assert:
+    that: [matrix_allow_changes | default(false) | bool]
+    fail_msg: "Mattermost changes require -e matrix_allow_changes=true."
+
+- name: Validate Mattermost topology, package, and protected configuration
+  ansible.builtin.assert:
+    that:
+      - matrix_versions.mattermost is defined
+      - matrix_versions.mattermost == '12.0.2'
+      - matrix_database_connections.mattermost.host is defined
+      - matrix_database_connections.mattermost.port == 5432
+      - matrix_database_connections.mattermost.database == 'mattermost'
+      - matrix_binds.mattermost.http.port == 8065
+      - matrix_mattermost_config is mapping
+      - matrix_mattermost_config.SqlSettings.DriverName == 'postgres'
+      - matrix_mattermost_config.SqlSettings.DataSource is defined
+      - matrix_mattermost_config.ServiceSettings.SiteURL == matrix_settings.mattermost.site_url
+      - matrix_mattermost_config.ServiceSettings.ListenAddress == (matrix_binds.mattermost.http.addresses[0] ~ ':' ~ (matrix_binds.mattermost.http.port | string))
+      - matrix_database_connections.mattermost.host in matrix_mattermost_config.SqlSettings.DataSource
+      - matrix_mattermost_config.FileSettings.DriverName == 'local'
+      - matrix_mattermost_config.FileSettings.Directory == '/opt/mattermost/data/'
+    fail_msg: "Supply the complete Mattermost config.json as a Vault-protected matrix_mattermost_config mapping. It must include the external PostgreSQL DataSource."
+  no_log: true
+
+- name: Install Mattermost repository prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg]
+    state: present
+    update_cache: false
+
+- name: Download official Mattermost repository signing key
+  ansible.builtin.get_url:
+    url: "{{ matrix_mattermost_key_url }}"
+    dest: "{{ matrix_mattermost_key_download }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install Mattermost repository keyring
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --yes
+      - --output
+      - "{{ matrix_mattermost_keyring }}"
+      - "{{ matrix_mattermost_key_download }}"
+  args:
+    creates: "{{ matrix_mattermost_keyring }}"
+
+- name: Configure official Mattermost APT repository
+  ansible.builtin.apt_repository:
+    repo: "{{ matrix_mattermost_repository }}"
+    filename: mattermost
+    state: present
+    update_cache: true
+
+- name: Install exact Mattermost package without starting it prematurely
+  ansible.builtin.apt:
+    name: "{{ matrix_mattermost_package_name }}={{ matrix_versions.mattermost }}-0"
+    state: present
+    allow_downgrade: false
+    update_cache: true
+    policy_rc_d: 101
+
+- name: Ensure Mattermost data directory exists
+  ansible.builtin.file:
+    path: "{{ matrix_mattermost_data_directory }}"
+    state: directory
+    owner: mattermost
+    group: mattermost
+    mode: "0750"
+
+- name: Install complete protected Mattermost configuration
+  ansible.builtin.template:
+    src: config.json.j2
+    dest: "{{ matrix_mattermost_config_file }}"
+    owner: mattermost
+    group: mattermost
+    mode: "0600"
+  no_log: true
+  notify: Restart Mattermost
+
+- name: Reload systemd unit definitions
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start Mattermost
+  ansible.builtin.systemd:
+    name: "{{ matrix_mattermost_service }}"
+    enabled: true
+    state: started
+
+- name: Wait for Mattermost listener
+  ansible.builtin.wait_for:
+    host: "{{ matrix_binds.mattermost.http.addresses[0] }}"
+    port: "{{ matrix_binds.mattermost.http.port }}"
+    state: started
+    timeout: 300

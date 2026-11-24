@@ -1,0 +1,29 @@
+# Managed by Ansible (matrix-environment): placement-dependent part of gitlab.rb.
+# The rest of gitlab.rb is preserved. GitLab CE {{ matrix_versions.gitlab }}.
+{% set db = matrix_endpoints.postgresql.postgres %}
+{% set tls = matrix_settings.gitlab.tls %}
+external_url {{ matrix_settings.gitlab.external_url | to_json }}
+
+# Use external PostgreSQL; the embedded Omnibus PostgreSQL service is disabled.
+postgresql['enable'] = false
+gitlab_rails['db_adapter'] = 'postgresql'
+gitlab_rails['db_encoding'] = 'unicode'
+gitlab_rails['db_host'] = {{ db.host | to_json }}
+gitlab_rails['db_port'] = {{ db.port }}
+gitlab_rails['db_database'] = 'gitlabhq_production'
+gitlab_rails['db_username'] = 'gitlab'
+gitlab_rails['db_sslmode'] = 'require'
+{% set db_password = matrix_gitlab_db_password | default('', true) %}
+{% if db_password | length > 0 %}
+gitlab_rails['db_password'] = {{ db_password | to_json }}
+{% else %}
+# Preview only: db_password is supplied through matrix_postgresql_role_passwords.gitlab.
+{% endif %}
+
+# Private HTTPS listener. Certificate/key content is provisioned separately.
+nginx['listen_addresses'] = {{ matrix_binds.gitlab.https.addresses | to_json }}
+nginx['listen_port'] = {{ tls.listener_port }}
+nginx['listen_https'] = true
+nginx['ssl_certificate'] = {{ tls.certificate_path | to_json }}
+nginx['ssl_certificate_key'] = {{ tls.certificate_key_path | to_json }}
+nginx['redirect_http_to_https'] = false

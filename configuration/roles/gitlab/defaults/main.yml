@@ -1,0 +1,8 @@
+---
+matrix_gitlab_ssl_dir: /etc/gitlab/ssl
+matrix_gitlab_certificate_path: "{{ matrix_settings.gitlab.tls.certificate_path }}"
+matrix_gitlab_private_key_path: "{{ matrix_settings.gitlab.tls.certificate_key_path }}"
+matrix_gitlab_package_name: gitlab-ce
+matrix_gitlab_reconfigure_command: gitlab-ctl reconfigure
+
+matrix_gitlab_db_password: "{{ matrix_postgresql_role_passwords.gitlab | default('') }}"

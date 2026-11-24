@@ -1,0 +1,15 @@
+# Inventory-derived manifest. Secret values are intentionally excluded.
+application: nextcloud
+version: "{{ matrix_versions.nextcloud }}"
+placement: "{{ matrix_node }}"
+private_ip: "{{ matrix_private_ip }}"
+http_listener:
+  addresses:
+{% for address in matrix_binds.nextcloud.http.addresses %}
+    - "{{ address }}"
+{% endfor %}
+  port: {{ matrix_binds.nextcloud.http.port }}
+database:
+{{ matrix_database_connections.nextcloud | to_nice_yaml(indent=2) | indent(2, true) }}
+deployment:
+{{ matrix_deployment.nextcloud | to_nice_yaml(indent=2) | indent(2, true) }}

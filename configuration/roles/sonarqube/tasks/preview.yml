@@ -1,0 +1,21 @@
+---
+- name: SonarQube preview directory
+  ansible.builtin.file:
+    path: "{{ matrix_preview_root }}/srv/alitech/services/sonarqube"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+- name: SonarQube Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ matrix_preview_root }}/srv/alitech/services/sonarqube/compose.yaml"
+    mode: "0600"
+  delegate_to: localhost
+
+- name: SonarQube deployment manifest
+  ansible.builtin.template:
+    src: deployment-manifest.yml.j2
+    dest: "{{ matrix_preview_root }}/srv/alitech/services/sonarqube/deployment-manifest.yml"
+    mode: "0644"
+  delegate_to: localhost

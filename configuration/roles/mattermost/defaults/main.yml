@@ -1,0 +1,9 @@
+---
+matrix_mattermost_package_name: mattermost
+matrix_mattermost_repository: "deb [signed-by=/usr/share/keyrings/mattermost-archive-keyring.gpg] https://deb.packages.mattermost.com noble main"
+matrix_mattermost_key_url: https://deb.packages.mattermost.com/pubkey.gpg
+matrix_mattermost_key_download: /var/tmp/mattermost-archive-keyring.asc
+matrix_mattermost_keyring: /usr/share/keyrings/mattermost-archive-keyring.gpg
+matrix_mattermost_config_file: /opt/mattermost/config/config.json
+matrix_mattermost_data_directory: /opt/mattermost/data
+matrix_mattermost_service: mattermost

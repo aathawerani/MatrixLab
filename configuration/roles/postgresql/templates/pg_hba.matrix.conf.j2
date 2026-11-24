@@ -1,0 +1,6 @@
+# Managed by Ansible (matrix-environment). One rule per consuming application,
+# scoped to the private IP of the node it is placed on (127.0.0.1 if co-located).
+# TYPE     DATABASE              USER               ADDRESS            METHOD
+{% for r in postgresql.hba %}
+{{ '%-8s' | format(r.type) }} {{ '%-20s' | format(r.database) }} {{ '%-17s' | format(r.user) }} {{ '%-17s' | format(r.address) }} {{ r.method }}  # {{ r.comment }}
+{% endfor %}

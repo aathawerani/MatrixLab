@@ -1,0 +1,9 @@
+---
+# Database creation is opt-in because passwords must come from Ansible Vault
+# or an approved external secret provider.
+matrix_manage_postgresql_databases: false
+matrix_postgresql_role_passwords: {}
+matrix_postgresql_package_version: "17.11-1.pgdg24.04+2"
+matrix_postgresql_cluster: "17-main"
+matrix_postgresql_conf_dir: "/etc/postgresql/17/main"
+matrix_postgresql_hba_include: "/etc/postgresql/17/main/pg_hba.matrix.conf"

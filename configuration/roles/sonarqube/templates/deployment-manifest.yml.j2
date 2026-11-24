@@ -1,0 +1,19 @@
+# Secret-free inventory-derived deployment manifest.
+application: sonarqube
+version: "{{ matrix_versions.sonarqube }}"
+image: "{{ matrix_images.sonarqube }}@{{ matrix_image_digests.sonarqube }}"
+placement: "{{ matrix_node }}"
+private_ip: "{{ matrix_private_ip }}"
+http_listener:
+  addresses:
+{% for address in matrix_binds.sonarqube.http.addresses %}
+    - "{{ address }}"
+{% endfor %}
+  port: {{ matrix_binds.sonarqube.http.port }}
+database:
+  host: "{{ matrix_database_connections.sonarqube.host }}"
+  port: {{ matrix_database_connections.sonarqube.port }}
+  name: "{{ matrix_database_connections.sonarqube.database }}"
+  user: "{{ matrix_database_connections.sonarqube.user }}"
+kernel_requirements:
+{{ matrix_sysctls | to_nice_yaml(indent=2) | indent(2, true) }}

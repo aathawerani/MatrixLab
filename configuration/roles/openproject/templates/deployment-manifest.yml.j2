@@ -1,0 +1,16 @@
+# Inventory-derived manifest. This is a preview contract, not a runnable Compose file.
+# Complete the proxy build context and runtime environment before deployment.
+application: openproject
+version: "{{ matrix_versions.openproject }}"
+placement: "{{ matrix_node }}"
+private_ip: "{{ matrix_private_ip }}"
+http_listener:
+  addresses:
+{% for address in matrix_binds.openproject.http.addresses %}
+    - "{{ address }}"
+{% endfor %}
+  port: {{ matrix_binds.openproject.http.port }}
+database:
+{{ matrix_database_connections.openproject | to_nice_yaml(indent=2) | indent(2, true) }}
+deployment:
+{{ matrix_deployment.openproject | to_nice_yaml(indent=2) | indent(2, true) }}

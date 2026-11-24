@@ -1,0 +1,81 @@
+---
+- name: Require explicit approval before changing SonarQube
+  ansible.builtin.assert:
+    that: [matrix_allow_changes | default(false) | bool]
+    fail_msg: "SonarQube changes require -e matrix_allow_changes=true."
+
+- name: Validate placement, immutable image, and database secret
+  ansible.builtin.assert:
+    that:
+      - matrix_database_connections.sonarqube.host is defined
+      - matrix_database_connections.sonarqube.port == 5432
+      - matrix_database_connections.sonarqube.database == 'sonarqube'
+      - matrix_images.sonarqube is defined
+      - matrix_image_digests.sonarqube is match('^sha256:[0-9a-f]{64}$')
+      - matrix_sysctls['vm.max_map_count'] | int >= 524288
+      - matrix_sysctls['fs.file-max'] | int >= 131072
+      - matrix_sonarqube_runtime_env is mapping
+      - (matrix_sonarqube_required_env | difference(matrix_sonarqube_runtime_env.keys() | list) | length) == 0
+    fail_msg: "Provide SONAR_JDBC_PASSWORD through Ansible Vault or an approved secret provider."
+  no_log: true
+
+- name: Require Docker Engine and Compose plugin
+  ansible.builtin.command: docker compose version
+  changed_when: false
+
+- name: Persist SonarQube kernel requirements
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-matrix-sonarqube.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by matrix-environment.
+      vm.max_map_count = {{ matrix_sysctls['vm.max_map_count'] }}
+      fs.file-max = {{ matrix_sysctls['fs.file-max'] }}
+  register: matrix_sonarqube_sysctl_file
+
+- name: Apply SonarQube kernel requirements immediately
+  ansible.builtin.command:
+    argv:
+      - sysctl
+      - -w
+      - "{{ item.key }}={{ item.value }}"
+  loop: "{{ matrix_sysctls | dict2items }}"
+  changed_when: true
+
+- name: Create SonarQube deployment directory
+  ansible.builtin.file:
+    path: "{{ matrix_sonarqube_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Render protected SonarQube Compose definition
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ matrix_sonarqube_compose_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Validate SonarQube Compose configuration
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_sonarqube_root }}", -f, "{{ matrix_sonarqube_compose_file }}", config, --quiet]
+  changed_when: false
+  no_log: true
+
+- name: Start SonarQube
+  ansible.builtin.command:
+    argv: [docker, compose, --project-directory, "{{ matrix_sonarqube_root }}", -f, "{{ matrix_sonarqube_compose_file }}", up, -d]
+  changed_when: true
+  no_log: true
+
+- name: Wait for SonarQube listener
+  ansible.builtin.wait_for:
+    host: "{{ matrix_binds.sonarqube.http.addresses[0] }}"
+    port: "{{ matrix_binds.sonarqube.http.port }}"
+    state: started
+    timeout: 300

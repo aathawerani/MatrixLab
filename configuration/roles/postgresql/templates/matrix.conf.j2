@@ -1,0 +1,11 @@
+# Managed by Ansible (matrix-environment). Placement-derived PostgreSQL settings.
+listen_addresses = '{{ postgresql.listen_addresses | join(",") }}'
+port = {{ matrix_binds.postgresql.postgres.port }}
+ssl = {{ 'on' if postgresql.settings.ssl else 'off' }}
+ssl_min_protocol_version = '{{ postgresql.settings.ssl_min_protocol_version }}'
+ssl_cert_file = '/etc/ssl/certs/ssl-cert-snakeoil.pem'
+ssl_key_file = '/etc/ssl/private/ssl-cert-snakeoil.key'
+max_connections = {{ postgresql.settings.max_connections }}
+max_locks_per_transaction = {{ postgresql.settings.max_locks_per_transaction }}
+shared_buffers = '{{ postgresql.settings.shared_buffers }}'
+password_encryption = '{{ postgresql.settings.password_encryption }}'

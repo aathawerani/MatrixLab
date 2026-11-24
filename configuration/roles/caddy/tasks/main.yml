@@ -1,0 +1,73 @@
+---
+- name: Require explicit approval before changing Caddy
+  ansible.builtin.assert:
+    that: [matrix_allow_changes | default(false) | bool]
+    fail_msg: "Caddy changes require -e matrix_allow_changes=true."
+
+- name: Validate generated Caddy settings
+  ansible.builtin.assert:
+    that:
+      - caddy is defined
+      - caddy.bind is defined
+      - caddy.bind in ['127.0.0.1', matrix_private_ip]
+      - caddy.tls is defined
+      - caddy.routes is defined
+      - matrix_versions.caddy is defined
+    fail_msg: "Caddy requires topology-generated listener, TLS, routes, and pinned version."
+
+- name: Install Caddy repository prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg]
+    state: present
+    update_cache: false
+
+- name: Download official Caddy repository signing key
+  ansible.builtin.get_url:
+    url: "{{ matrix_caddy_key_url }}"
+    dest: "{{ matrix_caddy_key_download }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install Caddy repository keyring
+  ansible.builtin.command:
+    argv:
+      - gpg
+      - --dearmor
+      - --yes
+      - --output
+      - "{{ matrix_caddy_keyring }}"
+      - "{{ matrix_caddy_key_download }}"
+  args:
+    creates: "{{ matrix_caddy_keyring }}"
+
+- name: Configure official Caddy stable repository
+  ansible.builtin.apt_repository:
+    repo: "{{ matrix_caddy_repository }}"
+    filename: caddy-stable
+    state: present
+    update_cache: true
+
+- name: Render topology-derived Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ matrix_caddyfile }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: matrix_caddyfile_result
+  notify: Validate and reload Caddy
+
+- name: Install pinned Caddy package
+  ansible.builtin.apt:
+    name: "{{ matrix_caddy_package_name }}={{ matrix_caddy_package_version }}"
+    state: present
+    allow_downgrade: false
+    update_cache: true
+  notify: Validate and reload Caddy
+
+- name: Enable and start Caddy
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: true
+    state: started

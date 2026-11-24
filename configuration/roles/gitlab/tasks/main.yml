@@ -1,0 +1,179 @@
+---
+- name: Require explicit approval before changing GitLab
+  ansible.builtin.assert:
+    that:
+      - matrix_allow_changes | default(false) | bool
+    fail_msg: "GitLab changes require -e matrix_allow_changes=true."
+
+- name: Validate generated GitLab placement
+  ansible.builtin.assert:
+    that:
+      - matrix_settings.gitlab.external_url is defined
+      - matrix_settings.gitlab.tls.certificate_path is defined
+      - matrix_settings.gitlab.tls.certificate_key_path is defined
+      - matrix_endpoints.postgresql.postgres.host is defined
+      - matrix_endpoints.postgresql.postgres.port is defined
+      - matrix_versions.gitlab is defined
+    fail_msg: "Generated GitLab or PostgreSQL endpoint settings are incomplete."
+
+- name: Require GitLab database and private-PKI material
+  ansible.builtin.assert:
+    that:
+      - matrix_gitlab_db_password | default('', true) | string | length > 0
+      - matrix_gitlab_tls_certificate is defined
+      - matrix_gitlab_tls_certificate | string | length > 0
+      - matrix_gitlab_tls_private_key is defined
+      - matrix_gitlab_tls_private_key | string | length > 0
+      - matrix_gitlab_tls_ca_certificate is defined
+      - matrix_gitlab_tls_ca_certificate | string | length > 0
+    fail_msg: >-
+      Supply matrix_gitlab_db_password, matrix_gitlab_tls_certificate and
+      matrix_gitlab_tls_private_key through Ansible Vault or an approved
+      external secret provider. Do not store them in topology.yml or the catalog.
+  no_log: true
+
+- name: Add private GitLab hostname mapping on the GitLab host
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\S+\s+{{ matrix_settings.gitlab.tls.hostname | regex_escape }}(\s|$)'
+    line: "{{ matrix_private_ip }} {{ matrix_settings.gitlab.tls.hostname }}"
+    state: present
+    create: false
+
+- name: Create GitLab configuration and TLS directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/gitlab, mode: "0700"}
+    - {path: "{{ matrix_gitlab_ssl_dir }}", mode: "0700"}
+
+- name: Install GitLab server certificate
+  ansible.builtin.copy:
+    content: "{{ matrix_gitlab_tls_certificate }}"
+    dest: "{{ matrix_gitlab_certificate_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Reconfigure GitLab
+
+- name: Install GitLab server private key
+  ansible.builtin.copy:
+    content: "{{ matrix_gitlab_tls_private_key }}"
+    dest: "{{ matrix_gitlab_private_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Reconfigure GitLab
+
+- name: Install private CA into GitLab host trust store
+  ansible.builtin.copy:
+    content: "{{ matrix_gitlab_tls_ca_certificate }}"
+    dest: /usr/local/share/ca-certificates/matrix-gitlab-private-ca.crt
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  register: matrix_gitlab_ca_copy
+
+- name: Refresh GitLab host trusted CA certificates
+  ansible.builtin.command: update-ca-certificates
+  changed_when: true
+  when: matrix_gitlab_ca_copy.changed
+
+- name: Ensure GitLab main configuration exists before package installation
+  ansible.builtin.file:
+    path: /etc/gitlab/gitlab.rb
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Install placement-derived GitLab configuration fragment
+  ansible.builtin.template:
+    src: gitlab.matrix.rb.j2
+    dest: /etc/gitlab/gitlab.matrix.rb
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Reconfigure GitLab
+
+- name: Load managed GitLab configuration without replacing the main file
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab/gitlab.rb
+    regexp: '^from_file "/etc/gitlab/gitlab.matrix.rb"$'
+    line: 'from_file "/etc/gitlab/gitlab.matrix.rb"'
+    insertafter: EOF
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Reconfigure GitLab
+
+- name: Create apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install GitLab CE repository signing key
+  ansible.builtin.get_url:
+    url: https://packages.gitlab.com/gitlab/gitlab-ce/gpgkey
+    dest: /etc/apt/keyrings/gitlab_gitlab-ce.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure GitLab CE package repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/gitlab_gitlab-ce.asc] https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/ {{ ansible_distribution_release }} main"
+    filename: gitlab_gitlab-ce
+    state: present
+
+- name: Refresh apt metadata for GitLab CE
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install pinned GitLab CE package
+  ansible.builtin.apt:
+    name: "{{ matrix_gitlab_package_name }}={{ matrix_versions.gitlab }}"
+    state: present
+    allow_downgrade: false
+  notify: Reconfigure GitLab
+
+- name: Apply GitLab configuration
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure GitLab services are enabled and running
+  ansible.builtin.command: gitlab-ctl start
+  register: matrix_gitlab_start
+  changed_when: false
+
+- name: Wait for GitLab HTTPS listener on the private interface
+  ansible.builtin.wait_for:
+    host: "{{ matrix_private_ip }}"
+    port: "{{ matrix_settings.gitlab.tls.listener_port }}"
+    state: started
+    timeout: 300
+
+- name: Verify GitLab HTTPS endpoint using the supplied private CA
+  ansible.builtin.uri:
+    url: "{{ matrix_settings.gitlab.external_url }}/-/readiness"
+    method: GET
+    validate_certs: true
+    status_code: [200, 503]
+    return_content: false
+  register: matrix_gitlab_readiness
+  retries: 20
+  delay: 15
+  until: matrix_gitlab_readiness.status == 200

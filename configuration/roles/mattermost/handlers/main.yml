@@ -1,0 +1,5 @@
+---
+- name: Restart Mattermost
+  ansible.builtin.systemd:
+    name: mattermost
+    state: restarted

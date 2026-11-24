@@ -1,0 +1,24 @@
+# Real deployment. Plays target APPLICATION GROUPS, never VM names, so moving an
+# application in topology.yml moves it here with no playbook change.
+# Play order must respect dependencies (tests/test_render.py checks this).
+#
+#   ansible-playbook -i ../generated/gcp/development/inventory.yml playbooks/site.yml \
+#     -e matrix_allow_changes=true
+- name: Base OS for every node
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Global deployment approval gate
+      ansible.builtin.assert:
+        that: matrix_allow_changes | default(false) | bool
+        fail_msg: "Deployment blocked. Preview first and explicitly set matrix_allow_changes=true."
+  roles: [common]
+
+- {name: PostgreSQL,    hosts: postgresql,    become: true, roles: [postgresql]}
+- {name: GitLab,        hosts: gitlab,        become: true, roles: [gitlab]}
+- {name: GitLab Runner, hosts: gitlab_runner, become: true, roles: [gitlab_runner]}
+- {name: OpenProject,   hosts: openproject,   become: true, roles: [openproject]}
+- {name: Nextcloud,     hosts: nextcloud,     become: true, roles: [nextcloud]}
+- {name: Mattermost,    hosts: mattermost,    become: true, roles: [mattermost]}
+- {name: SonarQube,     hosts: sonarqube,     become: true, roles: [sonarqube]}
+- {name: Caddy,         hosts: caddy,         become: true, roles: [caddy]}

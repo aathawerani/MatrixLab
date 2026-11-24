@@ -1,0 +1,8 @@
+---
+matrix_caddy_package_name: caddy
+matrix_caddy_package_version: "{{ matrix_versions.caddy }}"
+matrix_caddy_key_url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+matrix_caddy_repository: "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+matrix_caddy_key_download: /var/tmp/caddy-stable.gpg
+matrix_caddy_keyring: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+matrix_caddyfile: /etc/caddy/Caddyfile

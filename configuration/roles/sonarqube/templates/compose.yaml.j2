@@ -1,0 +1,24 @@
+# Managed by Ansible. PostgreSQL is external; no local database service.
+name: sonarqube
+services:
+  sonarqube:
+    image: "{{ matrix_images.sonarqube }}@{{ matrix_image_digests.sonarqube }}"
+    restart: unless-stopped
+    environment:
+      SONAR_JDBC_URL: "jdbc:postgresql://{{ matrix_database_connections.sonarqube.host }}:{{ matrix_database_connections.sonarqube.port }}/{{ matrix_database_connections.sonarqube.database }}"
+      SONAR_JDBC_USERNAME: "{{ matrix_database_connections.sonarqube.user }}"
+      SONAR_JDBC_PASSWORD: {{ (matrix_sonarqube_runtime_env | default({})).get('SONAR_JDBC_PASSWORD', '') | to_json }}
+    ports:
+{% for address in matrix_binds.sonarqube.http.addresses %}
+      - "{{ address }}:{{ matrix_binds.sonarqube.http.port }}:9000"
+{% endfor %}
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_temp:/opt/sonarqube/temp
+volumes:
+  sonarqube_data: {}
+  sonarqube_extensions: {}
+  sonarqube_logs: {}
+  sonarqube_temp: {}

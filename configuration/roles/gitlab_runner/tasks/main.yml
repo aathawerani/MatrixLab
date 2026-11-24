@@ -1,0 +1,106 @@
+---
+- name: Require explicit approval before changing GitLab Runner
+  ansible.builtin.assert:
+    that:
+      - matrix_allow_changes | default(false) | bool
+    fail_msg: "GitLab Runner changes require -e matrix_allow_changes=true."
+
+- name: Validate GitLab Runner endpoint and version
+  ansible.builtin.assert:
+    that:
+      - matrix_endpoints.gitlab.https.host is defined
+      - matrix_endpoints.gitlab.https.port == 443
+      - matrix_versions.gitlab_runner is defined
+      - matrix_settings.gitlab_runner.hostname is defined
+      - matrix_settings.gitlab_runner.url is defined
+    fail_msg: "Generated GitLab Runner endpoint settings are incomplete."
+
+- name: Add private GitLab hostname mapping on the Runner host
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^\S+\s+{{ matrix_settings.gitlab_runner.hostname | regex_escape }}(\s|$)'
+    line: "{{ matrix_endpoints.gitlab.https.host }} {{ matrix_settings.gitlab_runner.hostname }}"
+    state: present
+    create: false
+
+- name: Require private CA certificate for GitLab Runner
+  ansible.builtin.assert:
+    that:
+      - matrix_gitlab_tls_ca_certificate is defined
+      - matrix_gitlab_tls_ca_certificate | string | length > 0
+    fail_msg: >-
+      Supply matrix_gitlab_tls_ca_certificate through Ansible Vault or an
+      approved certificate provider. The runner must trust the GitLab private CA.
+  no_log: true
+
+- name: Create apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install GitLab Runner repository signing key
+  ansible.builtin.get_url:
+    url: https://packages.gitlab.com/runner/gitlab-runner/gpgkey
+    dest: /etc/apt/keyrings/runner_gitlab-runner.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure GitLab Runner package repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/runner_gitlab-runner.asc] https://packages.gitlab.com/runner/gitlab-runner/ubuntu/ {{ ansible_distribution_release }} main"
+    filename: runner_gitlab-runner
+    state: present
+
+- name: Refresh apt metadata for GitLab Runner
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install pinned GitLab Runner package
+  ansible.builtin.apt:
+    name: "{{ matrix_gitlab_runner_package_name }}={{ matrix_versions.gitlab_runner }}"
+    state: present
+    allow_downgrade: false
+
+- name: Create GitLab Runner certificate directory
+  ansible.builtin.file:
+    path: "{{ matrix_gitlab_runner_ca_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install private CA for GitLab Runner HTTPS trust
+  ansible.builtin.copy:
+    content: "{{ matrix_gitlab_tls_ca_certificate }}"
+    dest: "{{ matrix_gitlab_runner_ca_dir }}/{{ matrix_settings.gitlab_runner.hostname }}.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  no_log: true
+  notify: Restart GitLab Runner
+
+- name: Ensure GitLab Runner configuration file exists without replacing registration
+  ansible.builtin.file:
+    path: "{{ matrix_gitlab_runner_config }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Enable and start GitLab Runner service
+  ansible.builtin.systemd_service:
+    name: gitlab-runner
+    enabled: true
+    state: started
+
+- name: Apply pending GitLab Runner certificate changes
+  ansible.builtin.meta: flush_handlers
+
+# Deliberately do not run `gitlab-runner register`: registration requires a
+# one-time token and explicit operator authorization. Existing config.toml is preserved.

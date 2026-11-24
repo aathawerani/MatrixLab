@@ -1,0 +1,85 @@
+environment: reference
+provider: gcp
+managed_by_opentofu: false
+network:
+  project: example-gcp-project   # placeholder; real project ID is not committed
+  zone: us-central1-b
+  vpc: matrix-dev-vpc
+  subnet: matrix-dev-subnet
+  cidr: null
+access:
+  method: gcp_iap
+nodes:
+  vm01:
+    hostname: matrix-dev-vm-01
+    private_ip: 10.20.0.2
+    applications:
+    - gitlab
+  vm02:
+    hostname: matrix-dev-vm-02
+    private_ip: 10.20.0.3
+    applications:
+    - postgresql
+    - gitlab_runner
+    observed_auxiliary_services:
+    - name: gitlab-redis
+      image: redis:7.2-alpine
+      host_bind: 10.20.0.3:6379
+      data_directory: /srv/alitech/data/redis-gitlab
+      consumer_status: unverified; do not infer that GitLab Runner or GitLab consumes
+        it
+  vm03:
+    hostname: matrix-dev-vm-03
+    private_ip: 10.20.0.4
+    applications:
+    - caddy
+    - openproject
+    - nextcloud
+    - mattermost
+    - sonarqube
+# Public hostnames. {public_domain} is a placeholder; the real domain is supplied
+# at render time with MATRIX_PUBLIC_DOMAIN and never committed.
+public_domain: alitech.example
+routes:
+  projects.{public_domain}: openproject
+  cloud.{public_domain}: nextcloud
+  chat.{public_domain}: mattermost
+caddy:
+  # Caddy is the only public entry point. It listens on VM03's private address,
+  # which is where GCP delivers traffic for the VM's external IP. Certificates
+  # come from Let's Encrypt (HTTP-01); inbound TCP 80/443 must be open to VM03.
+  bind: 10.20.0.4
+  tls: acme
+  auto_https: disable_redirects
+  redirect_http: true
+  hsts_apps: [nextcloud, mattermost]
+  hsts_max_age: 15552000
+app_settings:
+  gitlab:
+    external_url: https://gitlab.matrix-dev.internal
+    listen_private: true
+    tls:
+      certificate_strategy: private_pki
+      hostname: gitlab.matrix-dev.internal
+      runner_trust_required: true
+      note: Live since 24 Nov 2026. Certificate issued by the private CA on VM01
+        (scripts/private-ca/issue-gitlab-certificate.sh); the hostname-to-IP mapping
+        is in /etc/hosts on VM01 and VM02, so internal DNS is not required.
+      certificate_path: /etc/gitlab/ssl/gitlab.matrix-dev.internal.crt
+      certificate_key_path: /etc/gitlab/ssl/gitlab.matrix-dev.internal.key
+      listener_port: 443
+  mattermost:
+    site_url: https://chat.{public_domain}
+  gitlab_runner:
+    tls_ca_path: /etc/gitlab-runner/certs/gitlab.matrix-dev.internal.crt
+    hostname: gitlab.matrix-dev.internal
+    url: https://gitlab.matrix-dev.internal
+    # Registration is an operator action (token entered at a hidden prompt); these
+    # are the values used on 24 Nov 2026. See configuration/roles/gitlab_runner/README.md.
+    registration:
+      name: matrix-dev-vm-02
+      executor: docker
+      default_image: alpine:3.21
+      docker_cpus: "2"
+      docker_memory: 4g
+      concurrent: 1

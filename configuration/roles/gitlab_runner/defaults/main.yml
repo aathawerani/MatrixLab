@@ -1,0 +1,4 @@
+---
+matrix_gitlab_runner_package_name: gitlab-runner
+matrix_gitlab_runner_ca_dir: /etc/gitlab-runner/certs
+matrix_gitlab_runner_config: /etc/gitlab-runner/config.toml

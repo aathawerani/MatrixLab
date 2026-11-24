@@ -1,0 +1,15 @@
+# Preview-only deployment contract; no private key, certificate, or password included.
+external_url: "{{ matrix_settings.gitlab.external_url }}"
+package: "gitlab-ce={{ matrix_versions.gitlab }}"
+postgresql:
+  host: "{{ matrix_endpoints.postgresql.postgres.host }}"
+  port: {{ matrix_endpoints.postgresql.postgres.port }}
+  database: gitlabhq_production
+  role: gitlab
+  sslmode: require
+https:
+  listen_addresses: {{ matrix_binds.gitlab.https.addresses | to_json }}
+  port: {{ matrix_settings.gitlab.tls.listener_port }}
+  certificate_path: "{{ matrix_settings.gitlab.tls.certificate_path }}"
+  private_key_path: "{{ matrix_settings.gitlab.tls.certificate_key_path }}"
+  private_ca_required: true

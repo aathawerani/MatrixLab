@@ -1,0 +1,14 @@
+---
+- name: Create Caddy preview directory
+  ansible.builtin.file:
+    path: "{{ matrix_preview_root }}/etc/caddy"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+- name: Render Caddyfile preview
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ matrix_preview_root }}/etc/caddy/Caddyfile"
+    mode: "0644"
+  delegate_to: localhost

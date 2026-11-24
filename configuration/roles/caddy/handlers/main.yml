@@ -1,0 +1,11 @@
+---
+- name: Validate and reload Caddy
+  block:
+    - name: Validate Caddy configuration
+      ansible.builtin.command:
+        argv: [/usr/bin/caddy, validate, --config, "{{ matrix_caddyfile }}", --adapter, caddyfile]
+      changed_when: false
+    - name: Reload Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: reloaded

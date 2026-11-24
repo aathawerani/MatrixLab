@@ -1,0 +1,26 @@
+# Managed by Ansible (matrix-environment). Generated from the topology's routes.
+{
+    auto_https {{ caddy.auto_https }}
+}
+{% for route in caddy.routes %}
+{% if caddy.redirect_http | default(false) %}
+
+http://{{ route.hostname }} {
+    bind {{ caddy.bind }}
+    redir https://{host}{uri} permanent
+}
+{% endif %}
+
+https://{{ route.hostname }} {
+    bind {{ caddy.bind }}
+{% if caddy.tls == 'internal' %}
+    tls internal
+{% elif caddy.tls != 'acme' %}
+    tls {{ caddy.tls }}
+{% endif %}
+{% if route.hsts | default(false) %}
+    header Strict-Transport-Security "max-age={{ caddy.hsts_max_age }}"
+{% endif %}
+    reverse_proxy {{ route.upstream }}
+}
+{% endfor %}

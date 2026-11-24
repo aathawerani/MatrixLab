@@ -1,0 +1,74 @@
+environment: development
+provider: aws
+managed_by_opentofu: true
+network:
+  region: CHANGE-ME-region
+  availability_zone: CHANGE-ME-az
+  cidr: 10.40.0.0/24
+access:
+  method: ssh
+  ssh_common_args: ''
+nodes:
+  vm01:
+    hostname: matrix-aws-vm-01
+    private_ip: 10.40.0.10
+    size: medium
+    disk_gb: 100
+    applications:
+    - gitlab
+    - gitlab_runner
+  vm02:
+    hostname: matrix-aws-vm-02
+    private_ip: 10.40.0.11
+    size: medium
+    disk_gb: 100
+    applications:
+    - postgresql
+  vm03:
+    hostname: matrix-aws-vm-03
+    private_ip: 10.40.0.12
+    size: small
+    disk_gb: 30
+    applications:
+    - caddy
+  vm04:
+    hostname: matrix-aws-vm-04
+    private_ip: 10.40.0.13
+    size: large
+    disk_gb: 150
+    applications:
+    - openproject
+    - nextcloud
+    - mattermost
+  vm05:
+    hostname: matrix-aws-vm-05
+    private_ip: 10.40.0.14
+    size: medium
+    disk_gb: 60
+    applications:
+    - sonarqube
+routes:
+  openproject.matrix-dev.internal: openproject
+  nextcloud.matrix-dev.internal: nextcloud
+  mattermost.matrix-dev.internal: mattermost
+caddy:
+  bind: 127.0.0.1
+  tls: internal
+app_settings:
+  gitlab:
+    external_url: https://gitlab.matrix-dev.internal
+    listen_private: true
+    tls:
+      certificate_strategy: private_pki
+      hostname: gitlab.matrix-dev.internal
+      certificate_path: /etc/gitlab/ssl/gitlab.matrix-dev.internal.crt
+      certificate_key_path: /etc/gitlab/ssl/gitlab.matrix-dev.internal.key
+      listener_port: 443
+      runner_trust_required: true
+      note: Target configuration only. Provision the server certificate/key and trusted
+        CA separately; Ansible adds the private hostname-to-IP mapping in /etc/hosts,
+        so internal DNS is not required.
+  gitlab_runner:
+    tls_ca_path: /etc/gitlab-runner/certs/gitlab.matrix-dev.internal.crt
+    hostname: gitlab.matrix-dev.internal
+    url: https://gitlab.matrix-dev.internal

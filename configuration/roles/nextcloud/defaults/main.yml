@@ -1,0 +1,11 @@
+---
+matrix_nextcloud_root: /srv/alitech/services/nextcloud
+matrix_nextcloud_compose_file: "{{ matrix_nextcloud_root }}/compose.yaml"
+matrix_nextcloud_runtime_env: {}
+matrix_nextcloud_required_env:
+  - NEXTCLOUD_ADMIN_USER
+  - NEXTCLOUD_ADMIN_PASSWORD
+  - NEXTCLOUD_TRUSTED_DOMAINS
+  - POSTGRES_PASSWORD
+matrix_nextcloud_html_dir: "{{ matrix_nextcloud_root }}/html"
+matrix_nextcloud_data_dir: "{{ matrix_nextcloud_root }}/data"

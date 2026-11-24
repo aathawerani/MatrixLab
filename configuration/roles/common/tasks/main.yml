@@ -1,0 +1,39 @@
+# Base OS preparation. The role is guarded before any mutating task.
+- name: Require explicit approval before changing hosts
+  ansible.builtin.assert:
+    that:
+      - matrix_allow_changes | default(false) | bool
+    fail_msg: >-
+      Refusing to change hosts. Run playbooks/preview.yml first, then explicitly
+      approve a deployment with -e matrix_allow_changes=true.
+
+- name: Verify supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+      - ansible_distribution_version is version("24.04", ">=")
+    fail_msg: "This baseline currently supports Ubuntu 24.04 or later."
+
+- name: Refresh apt metadata
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install common OS prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - python3-apt
+    state: present
+
+- name: Kernel settings required by applications placed on this host
+  ansible.builtin.template:
+    src: 90-matrix.conf.j2
+    dest: /etc/sysctl.d/90-matrix.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: matrix_sysctls | default({}) | length > 0
+  notify: Apply sysctl

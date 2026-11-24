@@ -1,0 +1,10 @@
+- name: OpenProject preview directory
+  ansible.builtin.file: {path: "{{ matrix_preview_root }}/srv/alitech/services/openproject", state: directory, mode: "0755"}
+  delegate_to: localhost
+
+- name: OpenProject deployment manifest
+  ansible.builtin.template:
+    src: deployment-manifest.yml.j2
+    dest: "{{ matrix_preview_root }}/srv/alitech/services/openproject/deployment-manifest.yml"
+    mode: "0644"
+  delegate_to: localhost

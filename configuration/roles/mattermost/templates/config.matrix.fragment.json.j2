@@ -1,0 +1,15 @@
+{
+  "ServiceSettings": {
+    "SiteURL": {{ matrix_settings.mattermost.site_url | to_json }},
+    "ListenAddress": {{ (matrix_binds.mattermost.http.addresses[-1] ~ ":" ~ matrix_binds.mattermost.http.port) | to_json }}
+  },
+  "SqlSettings": {
+    "DriverName": {{ matrix_deployment.mattermost.managed_config_fragment.SqlSettings.DriverName | to_json }},
+    "MaxIdleConns": {{ matrix_deployment.mattermost.managed_config_fragment.SqlSettings.MaxIdleConns }},
+    "MaxOpenConns": {{ matrix_deployment.mattermost.managed_config_fragment.SqlSettings.MaxOpenConns }}
+  },
+  "FileSettings": {
+    "DriverName": {{ matrix_deployment.mattermost.managed_config_fragment.FileSettings.DriverName | to_json }},
+    "Directory": {{ matrix_deployment.mattermost.managed_config_fragment.FileSettings.Directory | to_json }}
+  }
+}

@@ -1,0 +1,5 @@
+---
+# Safe defaults. Put actual passwords/certificates in an Ansible Vault file or
+# inject them from an external secret provider; never commit secret values.
+matrix_manage_postgresql_databases: false
+matrix_postgresql_role_passwords: {}

@@ -1,0 +1,20 @@
+- name: GitLab preview directory
+  ansible.builtin.file:
+    path: "{{ matrix_preview_root }}/etc/gitlab"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+
+- name: GitLab placement-dependent configuration preview
+  ansible.builtin.template:
+    src: gitlab-preview.yml.j2
+    dest: "{{ matrix_preview_root }}/etc/gitlab/deployment-contract.yml"
+    mode: "0644"
+  delegate_to: localhost
+
+- name: GitLab Omnibus Ruby fragment preview (secret-free)
+  ansible.builtin.template:
+    src: gitlab.matrix.rb.j2
+    dest: "{{ matrix_preview_root }}/etc/gitlab/gitlab.matrix.rb"
+    mode: "0644"
+  delegate_to: localhost

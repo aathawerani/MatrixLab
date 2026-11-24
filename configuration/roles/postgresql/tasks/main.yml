@@ -1,0 +1,143 @@
+---
+- name: Require explicit approval before changing PostgreSQL
+  ansible.builtin.assert:
+    that:
+      - matrix_allow_changes | default(false) | bool
+    fail_msg: "PostgreSQL changes require -e matrix_allow_changes=true."
+
+- name: Verify PostgreSQL placement data exists
+  ansible.builtin.assert:
+    that:
+      - postgresql is defined
+      - postgresql.listen_addresses is defined
+      - postgresql.settings is defined
+      - postgresql.hba is defined
+      - postgresql.databases is defined
+    fail_msg: "Generated PostgreSQL host variables are incomplete."
+
+- name: Validate database credentials before any database provisioning
+  ansible.builtin.assert:
+    that:
+      - matrix_postgresql_role_passwords is mapping
+      - (postgresql.databases | map(attribute='role') | difference(matrix_postgresql_role_passwords.keys() | list) | length) == 0
+    fail_msg: >-
+      Database creation was enabled, but one or more role passwords are missing.
+      Supply matrix_postgresql_role_passwords through Ansible Vault or a secret
+      provider. Do not put passwords in topology.yml or the application catalog.
+  when: matrix_manage_postgresql_databases | bool
+
+- name: Install PostgreSQL repository signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/postgresql.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure PostgreSQL PGDG repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    filename: pgdg
+    state: present
+
+- name: Refresh apt metadata after adding PGDG
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install pinned PostgreSQL 17 packages
+  ansible.builtin.apt:
+    name:
+      - "postgresql-17={{ matrix_postgresql_package_version }}"
+      - "postgresql-client-17={{ matrix_postgresql_package_version }}"
+      - python3-psycopg2
+      - ssl-cert
+    state: present
+    allow_downgrade: false
+
+- name: Ensure PostgreSQL configuration include directory exists
+  ansible.builtin.file:
+    path: "{{ matrix_postgresql_conf_dir }}/conf.d"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+
+- name: Ensure PostgreSQL loads managed configuration fragments
+  ansible.builtin.lineinfile:
+    path: "{{ matrix_postgresql_conf_dir }}/postgresql.conf"
+    regexp: "^include_dir\\s*="
+    line: "include_dir = 'conf.d'"
+    insertafter: EOF
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart PostgreSQL
+
+- name: Install placement-derived PostgreSQL settings
+  ansible.builtin.template:
+    src: matrix.conf.j2
+    dest: "{{ matrix_postgresql_conf_dir }}/conf.d/90-matrix.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart PostgreSQL
+
+- name: Install placement-derived PostgreSQL HBA rules
+  ansible.builtin.template:
+    src: pg_hba.matrix.conf.j2
+    dest: "{{ matrix_postgresql_hba_include }}"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+
+- name: Include generated HBA rules in the active pg_hba.conf
+  ansible.builtin.lineinfile:
+    path: "{{ matrix_postgresql_conf_dir }}/pg_hba.conf"
+    regexp: "^include_if_exists\\s+'{{ matrix_postgresql_hba_include | regex_escape }}'$"
+    line: "include_if_exists '{{ matrix_postgresql_hba_include }}'"
+    insertafter: EOF
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Restart PostgreSQL
+
+- name: Ensure PostgreSQL cluster is enabled and started
+  ansible.builtin.systemd_service:
+    name: "postgresql@{{ matrix_postgresql_cluster }}"
+    enabled: true
+    state: started
+
+- name: Apply pending PostgreSQL configuration changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for PostgreSQL to accept connections on the private listener
+  ansible.builtin.wait_for:
+    host: "{{ matrix_private_ip }}"
+    port: "{{ matrix_binds.postgresql.postgres.port }}"
+    state: started
+    timeout: 60
+
+- name: Create application database roles
+  community.postgresql.postgresql_user:
+    name: "{{ item.role }}"
+    password: "{{ matrix_postgresql_role_passwords[item.role] }}"
+    role_attr_flags: LOGIN
+    state: present
+    login_user: postgres
+    login_unix_socket: /var/run/postgresql
+  loop: "{{ postgresql.databases }}"
+  become_user: postgres
+  no_log: true
+  when: matrix_manage_postgresql_databases | bool
+
+- name: Create application databases
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    owner: "{{ item.role }}"
+    state: present
+    login_user: postgres
+    login_unix_socket: /var/run/postgresql
+  loop: "{{ postgresql.databases }}"
+  become_user: postgres
+  when: matrix_manage_postgresql_databases | bool

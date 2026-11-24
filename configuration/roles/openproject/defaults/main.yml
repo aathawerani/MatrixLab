@@ -1,0 +1,24 @@
+---
+matrix_openproject_root: /srv/alitech/services/openproject
+matrix_openproject_compose_file: "{{ matrix_openproject_root }}/compose.yaml"
+matrix_openproject_runtime_env: {}
+matrix_openproject_hocuspocus_env: {}
+matrix_openproject_required_env:
+  - DATABASE_URL
+  - SECRET_KEY_BASE
+  - OPENPROJECT_HOST__NAME
+  - OPENPROJECT_HTTPS
+  - OPENPROJECT_CACHE__MEMCACHE__SERVER
+  - OPENPROJECT_RAILS__CACHE__STORE
+  - OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__URL
+  - OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__SECRET
+  - OPENPROJECT_ADDITIONAL__HOST__NAMES
+  - OPENPROJECT_HSTS
+  - OPENPROJECT_RAILS__RELATIVE__URL__ROOT
+  - RAILS_MAX_THREADS
+  - RAILS_MIN_THREADS
+  - IMAP_ENABLED
+matrix_openproject_proxy_image: matrix/openproject-proxy:managed
+matrix_openproject_proxy_base_image: ""
+matrix_openproject_proxy_app_host: web
+matrix_openproject_manage_seeder: true

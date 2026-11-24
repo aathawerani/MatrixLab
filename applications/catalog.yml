@@ -1,0 +1,283 @@
+applications:
+  postgresql:
+    kind: package
+    version: '17.11'
+    ports:
+      postgres: 5432
+    requires: []
+    exposure: private
+    settings:
+      ssl: true
+      ssl_min_protocol_version: TLSv1.2
+      max_locks_per_transaction: 256
+      max_connections: 100
+      shared_buffers: 128MB
+      password_encryption: scram-sha-256
+  gitlab:
+    kind: package
+    version: 19.5.3-ce.0
+    ports:
+      https: 443
+    requires:
+    - app: postgresql
+      port: postgres
+      hba_type: hostssl
+      client_tls: required
+    database:
+      name: gitlabhq_production
+      role: gitlab
+    exposure: private
+  gitlab_runner:
+    kind: package
+    version: 19.5.3-1
+    ports: {}
+    requires:
+    - app: gitlab
+      port: https
+    exposure: private
+    tls:
+      trust_internal_ca_from: gitlab
+      required_for_connection: true
+  caddy:
+    kind: package
+    version: 2.11.9
+    ports:
+      https: 443
+    requires: []
+    exposure: public_candidate
+  openproject:
+    kind: compose
+    version: 17-slim
+    ports:
+      http: 8080
+    requires:
+    - app: postgresql
+      port: postgres
+      hba_type: host
+      client_tls: unknown
+    database:
+      name: openproject
+      role: openproject_app
+    exposure: public_candidate
+    image: openproject/openproject
+    components:
+      hocuspocus:
+        kind: compose
+        image: openproject/hocuspocus
+        version: 17.9.6
+        observed_digest: sha256:28c71d8ed88c6b9560909382aab2f50ec550aa4dd4a91f153ba8561ca35ee0db
+      proxy:
+        kind: compose
+        image: openproject/proxy
+        version: local-build
+        build_context: proxy
+        dockerfile: Dockerfile
+        observed_digest: sha256:b04922d753166c7468c0e601989703a10a8ed2df5c06ecd6f57dae88f349aa35
+      cache:
+        kind: compose
+        image: memcached
+        version: latest
+        observed_digest: sha256:a395a1bcf5e0e2b0fa4a0142e12b4e24a2320ba4b7c6ffa8655a1a86e8f29dee
+    excluded_observed_services:
+      db: No-op helper; OpenProject uses external PostgreSQL on VM02.
+      backup: Legacy utility archives local PGDATA; not applicable to external PostgreSQL.
+      upgrade: Separate maintenance workflow; must not run during clean recreation.
+      autoheal: Observed exited and mounts Docker socket read-write; requires separate
+        security decision.
+    observed_digest: sha256:817640f6637157903846ac79808fe0333b279ae6cddf3c57fe4bea6ff98b56d1
+    deployment:
+      type: compose
+      project_name: openproject
+      observed_services:
+        web:
+          image: openproject/openproject:17-slim
+          purpose: web
+          networks:
+          - backend
+          - frontend
+          volumes:
+          - opdata:/var/openproject/assets
+        worker:
+          image: openproject/openproject:17-slim
+          purpose: background worker
+          networks:
+          - backend
+          volumes:
+          - opdata:/var/openproject/assets
+        cron:
+          image: openproject/openproject:17-slim
+          purpose: scheduled jobs
+          networks:
+          - backend
+          volumes:
+          - opdata:/var/openproject/assets
+        seeder:
+          image: openproject/openproject:17-slim
+          purpose: one-shot initialization
+          networks:
+          - backend
+          volumes:
+          - opdata:/var/openproject/assets
+        hocuspocus:
+          image: openproject/hocuspocus:17.9.6
+          purpose: collaborative editing
+          networks:
+          - backend
+          - frontend
+        proxy:
+          build_context: proxy
+          dockerfile: Dockerfile
+          purpose: HTTP reverse proxy
+          host_bind: 127.0.0.1:8080
+        cache:
+          image: memcached:latest
+          purpose: application cache
+          networks:
+          - backend
+      named_volumes:
+        opdata: /var/openproject/assets
+      environment_variable_names:
+      - DATABASE_URL
+      - IMAP_ENABLED
+      - OPENPROJECT_ADDITIONAL__HOST__NAMES
+      - OPENPROJECT_CACHE__MEMCACHE__SERVER
+      - OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__SECRET
+      - OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__URL
+      - OPENPROJECT_HOST__NAME
+      - OPENPROJECT_HSTS
+      - OPENPROJECT_HTTPS
+      - OPENPROJECT_RAILS__CACHE__STORE
+      - OPENPROJECT_RAILS__RELATIVE__URL__ROOT
+      - RAILS_MAX_THREADS
+      - RAILS_MIN_THREADS
+      - SECRET_KEY_BASE
+      database_mode: external_postgresql
+      database_endpoint_source: resolved PostgreSQL dependency
+      proxy_source_required: true
+      preview_note: Inventory-derived deployment manifest; not a complete runnable
+        Compose file. Proxy source and runtime environment values must be supplied
+        before deployment.
+  nextcloud:
+    kind: compose
+    version: 35.0.2-apache
+    ports:
+      http: 8081
+    requires:
+    - app: postgresql
+      port: postgres
+      hba_type: host
+      client_tls: unknown
+    database:
+      name: nextcloud
+      role: nextcloud_app
+    exposure: public_candidate
+    image: nextcloud
+    observed_digest: sha256:d88929dc8386420b8963f86cabb667fdaf733eef9dcf8fc98e226801a32c023c
+    components:
+      redis:
+        kind: compose
+        image: redis
+        version: 7.4-alpine
+        observed_digest: sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b
+    deployment:
+      type: compose
+      project_name: nextcloud
+      observed_services:
+        app:
+          image: nextcloud:35.0.2-apache
+          purpose: web application
+          host_bind: 127.0.0.1:8081:80
+          bind_mounts:
+          - /srv/alitech/services/nextcloud/html:/var/www/html
+          - /srv/alitech/services/nextcloud/data:/var/www/data
+        cron:
+          image: nextcloud:35.0.2-apache
+          purpose: background jobs
+          bind_mounts:
+          - /srv/alitech/services/nextcloud/html:/var/www/html
+          - /srv/alitech/services/nextcloud/data:/var/www/data
+        redis:
+          image: redis:7.4-alpine
+          purpose: application cache
+          observed_data_mount: anonymous /data volume
+      database_mode: external_postgresql
+      database_endpoint_source: resolved PostgreSQL dependency
+      secret_directory: /srv/alitech/secrets/nextcloud
+      preview_note: Inventory-derived deployment manifest. Secret file names and remaining
+        runtime settings must be confirmed before deployment.
+      observed_environment_categories:
+      - Apache/PHP limits
+      - trusted domains
+      - PostgreSQL connection and secret-file settings
+      - Redis host and port
+  mattermost:
+    kind: package
+    version: 12.0.2
+    ports:
+      http: 8065
+    requires:
+    - app: postgresql
+      port: postgres
+      hba_type: host
+      client_tls: unknown
+    database:
+      name: mattermost
+      role: mattermost_app
+    exposure: public_candidate
+    deployment:
+      type: native_systemd
+      systemd_unit: /usr/lib/systemd/system/mattermost.service
+      executable: /opt/mattermost/bin/mattermost
+      run_user: mattermost
+      config_file: /opt/mattermost/config/config.json
+      data_directory: /opt/mattermost/data/
+      managed_config_fragment:
+        ServiceSettings:
+          SiteURL: https://mattermost.matrix-dev.internal
+          ListenAddress: 127.0.0.1:8065
+        SqlSettings:
+          DriverName: postgres
+          MaxIdleConns: 50
+          MaxOpenConns: 100
+        FileSettings:
+          DriverName: local
+          Directory: /opt/mattermost/data/
+      database_mode: external_postgresql
+      database_endpoint_source: resolved PostgreSQL dependency
+      secret_handling: Preserve existing DataSource; inject credentials through secret
+        management. Never replace the complete config.json with this fragment.
+      preview_note: Valid JSON merge fragment only; it intentionally excludes SqlSettings.DataSource
+        and all credentials.
+    package:
+      name: mattermost
+      version: 12.0.2-0
+      repository: https://deb.packages.mattermost.com
+      distribution: noble
+      component: main
+      architecture: amd64
+      observed_deb_sha256: 17b84164828f2fb80cce35bf017413dd64b5eff3cf3ca823470552d62840a858
+  sonarqube:
+    kind: compose
+    version: 26.11.0.134175-community
+    ports:
+      http: 9000
+    requires:
+    - app: postgresql
+      port: postgres
+      hba_type: host
+      client_tls: unknown
+    database:
+      name: sonarqube
+      role: sonarqube_app
+    exposure: private
+    host_sysctls:
+      vm.max_map_count: 524288
+      fs.file-max: 131072
+    advisories:
+      avoid_colocation_with:
+      - caddy
+      - postgresql
+      reason: Caddy's host is meant for public apps and demos; SonarQube's Elasticsearch
+        can contend with PostgreSQL for memory and I/O. Measure capacity first.
+    image: sonarqube
+    observed_digest: sha256:1ce197471f5f2bac347694a336862fd2c23e9f57c6edb46acebbfbe70f2c7d9c

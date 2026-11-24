@@ -1,0 +1,2 @@
+---
+# No handlers: Compose is validated before the explicit `up -d` task.

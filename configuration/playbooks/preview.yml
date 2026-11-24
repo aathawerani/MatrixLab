@@ -1,0 +1,18 @@
+# SAFE: renders every host's configuration on the control machine only.
+# No SSH, no changes to any VM. Use it to inspect generated configuration.
+#
+#   ansible-playbook -i ../generated/gcp/reference/inventory.yml playbooks/preview.yml
+#   -> ../generated/gcp/reference/preview/<host>/...
+- name: Render per-host configuration locally
+  hosts: all
+  connection: local
+  gather_facts: false
+  vars:
+    matrix_preview_root: "{{ inventory_dir }}/preview/{{ inventory_hostname }}"
+  tasks:
+    - name: Common preview
+      ansible.builtin.include_role: {name: common, tasks_from: preview}
+    - name: Application previews for the apps placed on this host
+      ansible.builtin.include_role: {name: "{{ matrix_app }}", tasks_from: preview}
+      loop_control: {loop_var: matrix_app}
+      loop: "{{ matrix_applications | select('in', ['postgresql', 'gitlab', 'gitlab_runner', 'openproject', 'nextcloud', 'mattermost', 'caddy', 'sonarqube']) | list }}"

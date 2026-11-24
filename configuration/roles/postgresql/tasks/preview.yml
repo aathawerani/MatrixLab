@@ -1,0 +1,14 @@
+- name: Preview directory
+  ansible.builtin.file: {path: "{{ matrix_preview_root }}/etc/postgresql/17/main/conf.d", state: directory, mode: "0755"}
+  delegate_to: localhost
+
+- name: PostgreSQL configuration fragments
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ matrix_preview_root }}/etc/postgresql/17/main/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - {src: matrix.conf.j2, dest: conf.d/90-matrix.conf}
+    - {src: pg_hba.matrix.conf.j2, dest: pg_hba.matrix.conf}
+    - {src: pg_hba.include.conf.j2, dest: pg_hba.matrix.include.conf}
+  delegate_to: localhost

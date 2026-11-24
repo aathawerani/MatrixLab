@@ -1,0 +1,5 @@
+# Preview-only certificate trust contract; no certificate material is included.
+gitlab_url: "{{ matrix_settings.gitlab_runner.url }}"
+ca_install_path: "{{ matrix_gitlab_runner_ca_dir | default('/etc/gitlab-runner/certs') }}/{{ matrix_settings.gitlab_runner.hostname }}.crt"
+registration: "not performed; requires explicit operator action and a registration token"
+config_toml: "preserved; never replaced by this role"

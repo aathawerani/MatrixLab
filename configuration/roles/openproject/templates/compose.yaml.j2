@@ -1,0 +1,74 @@
+# Managed by Ansible. PostgreSQL is external; no local database helper.
+name: openproject
+services:
+  web:
+    image: "{{ matrix_images.openproject }}@{{ matrix_image_digests.openproject }}"
+    restart: unless-stopped
+    environment:
+{{ matrix_openproject_runtime_env | to_nice_yaml(indent=6) | indent(6, true) }}
+    command: ["./docker/prod/web"]
+    depends_on:
+      cache: {condition: service_started}
+      seeder: {condition: service_completed_successfully}
+    volumes: ["opdata:/var/openproject/assets"]
+    networks: [backend, frontend]
+  worker:
+    image: "{{ matrix_images.openproject }}@{{ matrix_image_digests.openproject }}"
+    restart: unless-stopped
+    environment:
+{{ matrix_openproject_runtime_env | to_nice_yaml(indent=6) | indent(6, true) }}
+    command: ["./docker/prod/worker"]
+    depends_on:
+      cache: {condition: service_started}
+      seeder: {condition: service_completed_successfully}
+    volumes: ["opdata:/var/openproject/assets"]
+    networks: [backend]
+  cron:
+    image: "{{ matrix_images.openproject }}@{{ matrix_image_digests.openproject }}"
+    restart: unless-stopped
+    environment:
+{{ matrix_openproject_runtime_env | to_nice_yaml(indent=6) | indent(6, true) }}
+    command: ["./docker/prod/cron"]
+    depends_on:
+      cache: {condition: service_started}
+      seeder: {condition: service_completed_successfully}
+    volumes: ["opdata:/var/openproject/assets"]
+    networks: [backend]
+  seeder:
+    image: "{{ matrix_images.openproject }}@{{ matrix_image_digests.openproject }}"
+    restart: "no"
+    environment:
+{{ matrix_openproject_runtime_env | to_nice_yaml(indent=6) | indent(6, true) }}
+    command: ["./docker/prod/seeder"]
+    volumes: ["opdata:/var/openproject/assets"]
+    networks: [backend]
+  hocuspocus:
+    image: "{{ matrix_components.openproject.hocuspocus.image }}@{{ matrix_components.openproject.hocuspocus.observed_digest }}"
+    restart: unless-stopped
+    environment:
+{{ matrix_openproject_hocuspocus_env | to_nice_yaml(indent=6) | indent(6, true) }}
+    networks: [backend, frontend]
+  proxy:
+    image: "{{ matrix_openproject_proxy_image }}"
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+      args:
+        CADDY_BASE_IMAGE: "{{ matrix_openproject_proxy_base_image }}"
+        APP_HOST: "{{ matrix_openproject_proxy_app_host }}"
+    restart: unless-stopped
+    depends_on: [web, hocuspocus]
+    ports:
+{% for address in matrix_binds.openproject.http.addresses %}
+      - "{{ address }}:{{ matrix_binds.openproject.http.port }}:80"
+{% endfor %}
+    networks: [frontend]
+  cache:
+    image: "{{ matrix_components.openproject.cache.image }}@{{ matrix_components.openproject.cache.observed_digest }}"
+    restart: unless-stopped
+    networks: [backend]
+networks:
+  backend: {}
+  frontend: {}
+volumes:
+  opdata: {}
