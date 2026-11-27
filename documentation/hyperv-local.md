@@ -1,6 +1,7 @@
 # Local Hyper-V lab
 
-Status: **implemented, first automated build pending** (27 November 2026).
+Status: **implemented and built** (27 November 2026). The first automated build completed
+without failures and a repeated run converges.
 
 A disposable single-VM environment on a Windows 11 Pro laptop (8 cores, about 32 GB RAM). It
 exists to test the Ansible roles, GitLab upgrades and the GitLab operating policy before they

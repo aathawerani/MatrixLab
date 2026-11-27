@@ -66,7 +66,8 @@
     group: root
     mode: "{{ item.mode }}"
   loop:
-    - {path: /etc/gitlab, mode: "0700"}
+    # 0775 is the mode GitLab's own reconfigure sets; any other value flips on every run.
+    - {path: /etc/gitlab, mode: "0775"}
     - {path: "{{ matrix_gitlab_ssl_dir }}", mode: "0755"}
 
 - name: Create a local private CA and issue the GitLab certificate
@@ -187,6 +188,7 @@
 - name: Refresh apt metadata for GitLab CE
   ansible.builtin.apt:
     update_cache: true
+  changed_when: false
 
 - name: Install pinned GitLab CE package
   ansible.builtin.apt:

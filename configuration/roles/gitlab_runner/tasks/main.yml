@@ -61,6 +61,7 @@
 - name: Refresh apt metadata for GitLab Runner
   ansible.builtin.apt:
     update_cache: true
+  changed_when: false
 
 - name: Install pinned GitLab Runner packages
   ansible.builtin.apt:
