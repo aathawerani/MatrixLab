@@ -6,3 +6,15 @@ matrix_gitlab_package_name: gitlab-ce
 matrix_gitlab_reconfigure_command: gitlab-ctl reconfigure
 
 matrix_gitlab_db_password: "{{ matrix_postgresql_role_passwords.gitlab | default('') }}"
+
+# database: bundled (Omnibus PostgreSQL on the same host) or external (default)
+matrix_gitlab_database: "{{ matrix_settings.gitlab.database | default('external') }}"
+# tls.certificate_strategy:
+#   private_pki  certificate, key and CA are supplied as variables (Vault)
+#   local_ca     a name-constrained CA is created on this host by
+#                scripts/private-ca/issue-gitlab-certificate.sh
+matrix_gitlab_tls_strategy: "{{ matrix_settings.gitlab.tls.certificate_strategy | default('private_pki') }}"
+matrix_gitlab_ca_script: "{{ playbook_dir }}/../../scripts/private-ca/issue-gitlab-certificate.sh"
+matrix_gitlab_local_ca_certificate: /etc/gitlab/trusted-certs/matrix-dev-private-ca.crt
+# Set to false only to debug a failing reconfigure; output may include configuration values.
+matrix_gitlab_no_log: true

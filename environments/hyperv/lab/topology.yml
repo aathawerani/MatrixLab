@@ -1,0 +1,51 @@
+# Local single-VM lab on Hyper-V: GitLab (bundled database), GitLab Runner and Docker
+# on one Ubuntu VM. Used to test roles, GitLab upgrades and the GitLab operating policy
+# before they reach a real environment. Ansible runs on the VM itself (access: local).
+#
+# The VM is created with Hyper-V PowerShell (see documentation/hyperv-local.md); this
+# repository configures everything inside it.
+environment: lab
+provider: hyperv
+managed_by_opentofu: false
+network:
+  switch: MatrixLab-Internal
+  cidr: 10.250.10.0/24
+  gateway: 10.250.10.1
+access:
+  method: local
+nodes:
+  vm01:
+    hostname: matrix-vm01
+    private_ip: 10.250.10.11
+    extend_root_lvm: true
+    applications:
+    - gitlab
+    - gitlab_runner
+app_settings:
+  gitlab:
+    external_url: https://gitlab.matrixlab.internal
+    listen_private: true
+    database: bundled
+    tuning:
+      puma_workers: 2
+      sidekiq_concurrency: 10
+      prometheus_monitoring: false
+    tls:
+      certificate_strategy: local_ca
+      hostname: gitlab.matrixlab.internal
+      ca_permitted_dns: matrixlab.internal
+      ca_permitted_ip: 10.250.10.0/255.255.255.0
+      certificate_path: /etc/gitlab/ssl/gitlab.matrixlab.internal.crt
+      certificate_key_path: /etc/gitlab/ssl/gitlab.matrixlab.internal.key
+      listener_port: 443
+  gitlab_runner:
+    tls_ca_path: /etc/gitlab-runner/certs/gitlab.matrixlab.internal.crt
+    hostname: gitlab.matrixlab.internal
+    url: https://gitlab.matrixlab.internal
+    registration:
+      name: matrix-vm01-lab
+      executor: docker
+      default_image: alpine:3.21
+      docker_cpus: "1"
+      docker_memory: 1g
+      concurrent: 1

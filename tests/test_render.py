@@ -533,7 +533,10 @@ class Stage3GitLabRoles(unittest.TestCase):
         tasks = yaml.safe_load((REPO / "configuration/roles/gitlab_runner/tasks/main.yml").read_text())
         serialized = str(tasks)
         self.assertIn("matrix_gitlab_runner_config", serialized)
-        self.assertNotIn("ansible.builtin.template", serialized)
+        for task in tasks:
+            template = task.get("ansible.builtin.template")
+            if template:
+                self.assertNotIn("matrix_gitlab_runner_config", template["dest"])
         # The only copy task installs the CA certificate, not config.toml.
         for task in tasks:
             copy_args = task.get("ansible.builtin.copy", {})
@@ -737,3 +740,96 @@ class PublicRepositoryHygiene(unittest.TestCase):
             if path.name != "test_render.py":
                 hits += [f"{rel}: {w}" for w in self.FORBIDDEN_WORDS if w in text]
         self.assertEqual(hits, [])
+
+
+LAB = yaml.safe_load((REPO / "environments/hyperv/lab/topology.yml").read_text())
+
+
+class HyperVLab(unittest.TestCase):
+    """Single-node local lab: GitLab with its bundled database, Runner and Docker on one VM."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.res, cls.warnings, cls.out = render_topology(copy.deepcopy(LAB))
+        cls.vm = hv(cls.res, "matrix-vm01")
+
+    def test_single_node_needs_no_firewall_flows_and_no_postgresql(self):
+        self.assertEqual(self.res["rules"], [])
+        self.assertEqual(self.res["order"], ["gitlab", "gitlab_runner"])
+        self.assertNotIn("postgresql", self.vm["matrix_endpoints"])
+        self.assertEqual(self.vm["matrix_database_connections"], {})
+
+    def test_inventory_uses_local_connection(self):
+        inventory = yaml.safe_load((self.out / "inventory.yml").read_text())
+        self.assertEqual(inventory["all"]["vars"]["ansible_connection"], "local")
+        self.assertEqual(inventory["all"]["vars"]["matrix_provider"], "hyperv")
+
+    def test_host_flags_for_docker_and_root_disk(self):
+        self.assertTrue(self.vm["matrix_docker_required"])
+        self.assertTrue(self.vm["matrix_extend_root_lvm"])
+        self.assertTrue(self.vm["matrix_docker_versions"]["docker-ce"].startswith("5:29.9.3"))
+
+    def test_gitlab_listens_on_loopback_and_private_address(self):
+        self.assertEqual(self.vm["matrix_binds"]["gitlab"]["https"]["addresses"],
+                         ["127.0.0.1", "10.250.10.11"])
+
+    def test_gitlab_template_uses_bundled_database_and_tuning(self):
+        rendered = render_role_template("gitlab/templates/gitlab.matrix.rb.j2", self.vm)
+        self.assertIn('external_url "https://gitlab.matrixlab.internal"', rendered)
+        self.assertNotIn("postgresql['enable'] = false", rendered)
+        self.assertNotIn("db_host", rendered)
+        self.assertIn("puma['worker_processes'] = 2", rendered)
+        self.assertIn("prometheus_monitoring['enable'] = false", rendered)
+        self.assertIn('nginx[\'status\'][\'listen_addresses\'] = ["127.0.0.1"]', rendered)
+
+    def test_reference_template_still_uses_external_database_without_tuning(self):
+        res, _, _ = render_topology(copy.deepcopy(REFERENCE))
+        rendered = render_role_template("gitlab/templates/gitlab.matrix.rb.j2", hv(res, "matrix-dev-vm-01"))
+        self.assertIn("postgresql['enable'] = false", rendered)
+        self.assertIn("gitlab_rails['db_host'] = \"10.20.0.3\"", rendered)
+        self.assertNotIn("puma[", rendered)
+
+    def test_registration_helper_uses_private_address_and_hides_token(self):
+        ctx = dict(self.vm, matrix_gitlab_runner_config="/etc/gitlab-runner/config.toml",
+                   matrix_gitlab_runner_ca_dir="/etc/gitlab-runner/certs",
+                   matrix_gitlab_runner_register_helper="/usr/local/sbin/matrix-register-runner",
+                   matrix_gitlab_runner_gitlab_address="10.250.10.11")
+        rendered = render_role_template("gitlab_runner/templates/matrix-register-runner.sh.j2", ctx)
+        self.assertIn('--docker-extra-hosts "gitlab.matrixlab.internal:10.250.10.11"', rendered)
+        self.assertIn("read -rsp", rendered)
+        self.assertIn("--docker-cpus 1", rendered)
+        self.assertNotIn("gitlab-runner list\n", rendered.replace("`gitlab-runner list`", ""))
+
+    def test_reference_nodes_that_need_docker_are_flagged(self):
+        res, _, _ = render_topology(copy.deepcopy(REFERENCE))
+        flags = {h: v["matrix_docker_required"] for h, v in res["host_vars"].items()}
+        self.assertEqual(flags, {"matrix-dev-vm-01": False, "matrix-dev-vm-02": True,
+                                 "matrix-dev-vm-03": True})
+
+    def test_local_access_with_two_nodes_is_rejected(self):
+        topo = copy.deepcopy(LAB)
+        topo["nodes"]["vm02"] = {"hostname": "matrix-vm02", "private_ip": "10.250.10.12",
+                                 "applications": []}
+        with self.assertRaises(R.TopologyError) as ctx:
+            render_topology(topo)
+        self.assertIn("exactly one node", str(ctx.exception))
+
+    def test_gateway_address_is_reserved(self):
+        topo = copy.deepcopy(LAB)
+        topo["nodes"]["vm01"]["private_ip"] = "10.250.10.1"
+        with self.assertRaises(R.TopologyError) as ctx:
+            render_topology(topo)
+        self.assertIn("reserved by hyperv", str(ctx.exception))
+
+    def test_bundled_database_only_where_supported(self):
+        topo = copy.deepcopy(REFERENCE)
+        topo["app_settings"]["mattermost"]["database"] = "bundled"
+        with self.assertRaises(R.TopologyError) as ctx:
+            render_topology(topo)
+        self.assertIn("mattermost has no bundled database", str(ctx.exception))
+
+    def test_site_playbook_runs_docker_before_applications(self):
+        plays = yaml.safe_load((REPO / "configuration/playbooks/site.yml").read_text())
+        names = [p["name"] for p in plays]
+        self.assertLess(names.index("Docker"), names.index("PostgreSQL"))
+        self.assertEqual(plays[names.index("Docker")]["roles"], ["docker"])

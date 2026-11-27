@@ -98,7 +98,7 @@ These roles have not been executed by Ansible or Docker Compose in this developm
 
 ## Remaining implementation and validation
 
-All roles (common, PostgreSQL, GitLab, Runner, OpenProject, Nextcloud, Mattermost, SonarQube, Caddy) are implemented but none has been exercised against a VM, and `ansible-playbook --syntax-check` has not yet been run. No existing service should be changed until roles are validated in a disposable target environment. OpenProject deployment additionally requires a verified immutable Caddy base-image digest and Vault-supplied runtime values.
+All roles (common, PostgreSQL, GitLab, Runner, OpenProject, Nextcloud, Mattermost, SonarQube, Caddy) are implemented. `ansible-playbook --syntax-check` passes for every environment. Only `common`, `docker`, `gitlab` and `gitlab_runner` are exercised on a VM (the local lab, `documentation/hyperv-local.md`). No existing service should be changed until roles are validated in a disposable target environment. OpenProject deployment additionally requires a verified immutable Caddy base-image digest and Vault-supplied runtime values.
 
 
 ## SonarQube role

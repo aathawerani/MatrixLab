@@ -1,9 +1,14 @@
 # Managed by Ansible (matrix-environment): placement-dependent part of gitlab.rb.
 # The rest of gitlab.rb is preserved. GitLab CE {{ matrix_versions.gitlab }}.
-{% set db = matrix_endpoints.postgresql.postgres %}
 {% set tls = matrix_settings.gitlab.tls %}
+{% set tuning = matrix_settings.gitlab.tuning | default({}) %}
 external_url {{ matrix_settings.gitlab.external_url | to_json }}
+letsencrypt['enable'] = false
 
+{% if matrix_settings.gitlab.database | default('external') == 'bundled' %}
+# Bundled Omnibus PostgreSQL on this host (single-node environments).
+{% else %}
+{% set db = matrix_endpoints.postgresql.postgres %}
 # Use external PostgreSQL; the embedded Omnibus PostgreSQL service is disabled.
 postgresql['enable'] = false
 gitlab_rails['db_adapter'] = 'postgresql'
@@ -19,6 +24,7 @@ gitlab_rails['db_password'] = {{ db_password | to_json }}
 {% else %}
 # Preview only: db_password is supplied through matrix_postgresql_role_passwords.gitlab.
 {% endif %}
+{% endif %}
 
 # Private HTTPS listener. Certificate/key content is provisioned separately.
 nginx['listen_addresses'] = {{ matrix_binds.gitlab.https.addresses | to_json }}
@@ -27,3 +33,18 @@ nginx['listen_https'] = true
 nginx['ssl_certificate'] = {{ tls.certificate_path | to_json }}
 nginx['ssl_certificate_key'] = {{ tls.certificate_key_path | to_json }}
 nginx['redirect_http_to_https'] = false
+# The NGINX status page answers on loopback only.
+nginx['status']['listen_addresses'] = ["127.0.0.1"]
+{% if tuning %}
+
+# Sizing for this environment (app_settings.gitlab.tuning).
+{% if tuning.puma_workers is defined %}
+puma['worker_processes'] = {{ tuning.puma_workers }}
+{% endif %}
+{% if tuning.sidekiq_concurrency is defined %}
+sidekiq['concurrency'] = {{ tuning.sidekiq_concurrency }}
+{% endif %}
+{% if tuning.prometheus_monitoring is defined %}
+prometheus_monitoring['enable'] = {{ 'true' if tuning.prometheus_monitoring else 'false' }}
+{% endif %}
+{% endif %}

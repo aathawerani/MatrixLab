@@ -30,8 +30,26 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 NODE_KEY = re.compile(r"^[a-z][a-z0-9_]{0,30}$")
 # Addresses each cloud reserves inside a subnet: (from start, from end)
-RESERVED = {"gcp": (2, 2), "aws": (4, 1), "azure": (4, 1)}
+# hyperv: an internal switch behind host NAT; the host adapter is the gateway (.1)
+RESERVED = {"gcp": (2, 2), "aws": (4, 1), "azure": (4, 1), "hyperv": (2, 1)}
 PROXY_APP = "caddy"
+BUNDLED = "bundled"
+
+
+def requirements(app: str, apps: dict, settings: dict) -> list[dict]:
+    """Dependencies of an application in this topology.
+
+    app_settings.<app>.database: bundled means the application runs its own embedded
+    database, so its catalog dependency on the shared PostgreSQL does not apply.
+    """
+    reqs = apps[app].get("requires") or []
+    if (settings.get(app) or {}).get("database") == BUNDLED:
+        reqs = [r for r in reqs if r["app"] != "postgresql"]
+    return reqs
+
+
+def needs_docker(app: str, apps: dict) -> bool:
+    return apps[app].get("kind") == "compose" or bool(apps[app].get("requires_docker"))
 
 
 class TopologyError(Exception):
@@ -58,6 +76,18 @@ def validate(topo: dict, catalog: dict, sizing: dict) -> list[str]:
         errors.append("topology defines no nodes")
 
     managed = bool(topo.get("managed_by_opentofu"))
+    if provider == "hyperv" and managed:
+        errors.append("provider hyperv is provisioned with Hyper-V PowerShell; "
+                      "managed_by_opentofu must be false")
+    if (topo.get("access") or {}).get("method") == "local" and len(nodes) != 1:
+        errors.append("access.method local runs Ansible on the node itself and needs exactly one node")
+    settings = topo.get("app_settings") or {}
+    for app, cfg in settings.items():
+        db_mode = (cfg or {}).get("database")
+        if db_mode is not None and db_mode not in {BUNDLED, "external"}:
+            errors.append(f"app_settings.{app}.database must be bundled or external, got {db_mode!r}")
+        if db_mode == BUNDLED and not (apps.get(app) or {}).get("supports_bundled_database"):
+            errors.append(f"app_settings.{app}.database: {app} has no bundled database")
     cidr = (topo.get("network") or {}).get("cidr")
     net = None
     if cidr:
@@ -124,7 +154,7 @@ def validate(topo: dict, catalog: dict, sizing: dict) -> list[str]:
 
     # dependencies
     for app, node in placement.items():
-        for req in apps[app].get("requires") or []:
+        for req in requirements(app, apps, settings):
             dep, port = req["app"], req["port"]
             if dep not in placement:
                 errors.append(f"{app} (on {node}) requires {dep}, which is not placed")
@@ -189,9 +219,10 @@ def validate(topo: dict, catalog: dict, sizing: dict) -> list[str]:
 
 
 # --------------------------------------------------------------------------- resolution
-def deploy_order(placement: dict, apps: dict, routes: dict) -> list[str]:
+def deploy_order(placement: dict, apps: dict, routes: dict, settings: dict | None = None) -> list[str]:
     """Topological order: dependencies before dependants; Caddy after its upstreams."""
-    deps = {a: {r["app"] for r in apps[a].get("requires") or []} for a in placement}
+    settings = settings or {}
+    deps = {a: {r["app"] for r in requirements(a, apps, settings)} for a in placement}
     if PROXY_APP in deps:
         deps[PROXY_APP] |= set(routes.values())
     order, done, visiting = [], set(), set()
@@ -213,11 +244,12 @@ def deploy_order(placement: dict, apps: dict, routes: dict) -> list[str]:
     return order
 
 
-def edges(placement: dict, apps: dict, routes: dict) -> list[dict]:
+def edges(placement: dict, apps: dict, routes: dict, settings: dict | None = None) -> list[dict]:
     """Every consumer -> provider connection, whether same-node or cross-node."""
+    settings = settings or {}
     out = []
     for app in placement:
-        for req in apps[app].get("requires") or []:
+        for req in requirements(app, apps, settings):
             out.append({"consumer": app, "provider": req["app"], "port_name": req["port"],
                         "hba_type": req.get("hba_type", "host"),
                         "client_tls": req.get("client_tls", "unknown"),
@@ -239,8 +271,9 @@ def resolve(topo: dict, catalog: dict, sizing: dict) -> dict:
     placement = {a: k for k, n in nodes.items() for a in n.get("applications") or []}
     ip = {k: n["private_ip"] for k, n in nodes.items()}
     settings = topo.get("app_settings") or {}
-    all_edges = edges(placement, apps, routes)
-    order = deploy_order(placement, apps, routes)
+    all_edges = edges(placement, apps, routes, settings)
+    order = deploy_order(placement, apps, routes, settings)
+    docker_versions = (catalog.get("host_packages") or {}).get("docker") or {}
 
     host_vars: dict[str, dict] = {}
     for key, node in nodes.items():
@@ -280,6 +313,9 @@ def resolve(topo: dict, catalog: dict, sizing: dict) -> dict:
             "matrix_endpoints": endpoints,
             "matrix_binds": binds,
             "matrix_sysctls": sysctls,
+            "matrix_extend_root_lvm": bool(node.get("extend_root_lvm", False)),
+            "matrix_docker_required": any(needs_docker(a, apps) for a in local_apps),
+            "matrix_docker_versions": docker_versions,
             "matrix_versions": {a: apps[a].get("version") for a in local_apps},
             "matrix_images": {a: apps[a].get("image") for a in local_apps if apps[a].get("image")},
             "matrix_image_digests": {a: apps[a].get("observed_digest") for a in local_apps
@@ -386,6 +422,9 @@ def connection_vars(topo: dict) -> dict:
                 f"--project={os.environ.get('MATRIX_GCP_PROJECT') or net.get('project')}\""
             )
         }
+    if access.get("method") == "local":
+        # Ansible runs on the node itself (single-node lab); no SSH involved.
+        return {"ansible_connection": "local"}
     args = access.get("ssh_common_args")
     return {"ansible_ssh_common_args": args} if args else {}
 

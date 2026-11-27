@@ -1,0 +1,63 @@
+---
+# Docker Engine and Compose at the versions pinned in applications/catalog.yml
+# (host_packages.docker). Runs only on nodes whose applications need Docker.
+- name: Docker Engine
+  when: matrix_docker_required | default(false) | bool
+  block:
+    - name: Require explicit approval before changing Docker
+      ansible.builtin.assert:
+        that:
+          - matrix_allow_changes | default(false) | bool
+        fail_msg: "Docker changes require -e matrix_allow_changes=true."
+
+    - name: Require pinned Docker package versions
+      ansible.builtin.assert:
+        that:
+          - matrix_docker_versions | default({}) | length > 0
+          - "'docker-ce' in matrix_docker_versions"
+        fail_msg: "applications/catalog.yml has no host_packages.docker versions."
+
+    - name: Create apt keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Docker repository signing key
+      ansible.builtin.get_url:
+        url: "{{ matrix_docker_repository }}/gpg"
+        dest: "{{ matrix_docker_keyring }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure Docker package repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by={{ matrix_docker_keyring }}] {{ matrix_docker_repository }} {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+
+    - name: Install pinned Docker packages
+      ansible.builtin.apt:
+        name: >-
+          {{ matrix_docker_versions | dict2items | map(attribute='key')
+             | zip(matrix_docker_versions | dict2items | map(attribute='value'))
+             | map('join', '=') | list }}
+        state: present
+        update_cache: true
+        allow_downgrade: false
+        allow_change_held_packages: false
+
+    - name: Hold Docker packages so OS updates cannot upgrade them
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: "{{ matrix_docker_versions.keys() | list }}"
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started

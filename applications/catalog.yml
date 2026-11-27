@@ -27,6 +27,7 @@ applications:
       name: gitlabhq_production
       role: gitlab
     exposure: private
+    supports_bundled_database: true
   gitlab_runner:
     kind: package
     version: 19.5.3-1
@@ -35,6 +36,7 @@ applications:
     - app: gitlab
       port: https
     exposure: private
+    requires_docker: true
     tls:
       trust_internal_ca_from: gitlab
       required_for_connection: true
@@ -281,3 +283,14 @@ applications:
         can contend with PostgreSQL for memory and I/O. Measure capacity first.
     image: sonarqube
     observed_digest: sha256:1ce197471f5f2bac347694a336862fd2c23e9f57c6edb46acebbfbe70f2c7d9c
+# Host-level packages that are not applications (they may be needed on several nodes).
+# The docker role installs these exact versions on every node whose applications need
+# Docker (kind: compose, or requires_docker: true) and holds them.
+host_packages:
+  docker:
+    docker-ce: 5:29.9.3-1~ubuntu.24.04~noble
+    docker-ce-cli: 5:29.9.3-1~ubuntu.24.04~noble
+    docker-ce-rootless-extras: 5:29.9.3-1~ubuntu.24.04~noble
+    containerd.io: 2.4.2-3~ubuntu.24.04~noble
+    docker-buildx-plugin: 0.38.1-1~ubuntu.24.04~noble
+    docker-compose-plugin: 5.7.0-1~ubuntu.24.04~noble

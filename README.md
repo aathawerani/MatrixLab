@@ -58,14 +58,14 @@ tofu -chdir=infrastructure/opentofu/providers/gcp plan -var spec_file=$PWD/gener
 
 | Part | State |
 |---|---|
-| Topology, catalog, renderer, validation | working locally; 62 tests (`python3 -m unittest discover -s tests`) |
+| Topology, catalog, renderer, validation | working locally; 79 tests (`python3 -m unittest discover -s tests`) |
 | Configuration previews | PostgreSQL, GitLab HTTPS, Runner CA fragment, Caddy, SonarQube, and inventory-derived OpenProject/Nextcloud/Mattermost manifests |
-| Ansible install/config tasks | All eight application roles plus `common` implemented; not yet run by Ansible or tested on a VM; `ansible-playbook --syntax-check` not yet run |
+| Ansible install/config tasks | All eight application roles plus `common` implemented; `ansible-playbook --syntax-check` passes for every environment (checked in CI); `common`, `docker`, `gitlab` and `gitlab_runner` are exercised on the local lab, the other roles have not been run on a VM |
 | OpenTofu GCP/AWS/Azure stacks | written and formatted; **not yet `init`/`validate`d against real providers** |
 | Admin access (AWS SSM, Azure Bastion), NAT/egress | not yet |
 | Public sites (GCP reference) | OpenProject, Nextcloud and Mattermost live behind Caddy with Let's Encrypt since 23 Nov 2026 (configured by hand; the Caddy role renders the same Caddyfile but has not been run) |
 | GitLab private HTTPS and Runner (GCP reference) | Private CA on VM01, Runner registered on VM02 since 24 Nov 2026 (configured by hand) |
-| Local Hyper-V target | deferred; see [`documentation/hyperv-local-deferred.md`](documentation/hyperv-local-deferred.md) |
+| Local Hyper-V lab | single-VM lab built by `scripts/lab/build.sh`; see [`documentation/hyperv-local.md`](documentation/hyperv-local.md) |
 
 `generated/` is git-ignored. Regenerate it whenever the topology changes.
 

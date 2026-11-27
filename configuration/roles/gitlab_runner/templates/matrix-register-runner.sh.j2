@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Managed by Ansible (matrix-environment). Registers this host as a GitLab Runner.
+#
+#   sudo {{ matrix_gitlab_runner_register_helper }}
+#
+# Create the runner first in GitLab (Admin > CI/CD > Runners > Create instance runner),
+# then paste its token at the hidden prompt. The token is never written to the shell
+# history or shown on screen. Do not run `gitlab-runner list`: it prints the token.
+set -euo pipefail
+{% set reg = matrix_settings.gitlab_runner.registration %}
+{% set host = matrix_settings.gitlab_runner.hostname %}
+config={{ matrix_gitlab_runner_config }}
+
+if grep -q '^\[\[runners\]\]' "$config" 2>/dev/null; then
+  echo "A runner is already registered in $config - nothing changed."
+  exit 0
+fi
+
+read -rsp 'Runner token (glrt-...): ' CI_SERVER_TOKEN; echo
+export CI_SERVER_TOKEN
+gitlab-runner register --non-interactive \
+  --url {{ matrix_settings.gitlab_runner.url }} \
+  --tls-ca-file {{ matrix_gitlab_runner_ca_dir }}/{{ host }}.crt \
+  --name {{ reg.name }} \
+  --executor {{ reg.executor }} \
+  --docker-image {{ reg.default_image }} \
+  --docker-cpus {{ reg.docker_cpus }} \
+  --docker-memory {{ reg.docker_memory }} \
+  --docker-extra-hosts "{{ host }}:{{ matrix_gitlab_runner_gitlab_address | trim }}"
+unset CI_SERVER_TOKEN
+
+sed -i -E 's/^concurrent = .*/concurrent = {{ reg.concurrent | default(1) }}/' "$config"
+gitlab-runner verify 2>&1 | tail -1

@@ -2,3 +2,12 @@
 matrix_gitlab_runner_package_name: gitlab-runner
 matrix_gitlab_runner_ca_dir: /etc/gitlab-runner/certs
 matrix_gitlab_runner_config: /etc/gitlab-runner/config.toml
+# CA created on the GitLab host by the gitlab role (tls.certificate_strategy: local_ca).
+# Used when GitLab is on this same node and no CA certificate is supplied as a variable.
+matrix_gitlab_runner_local_ca_certificate: /etc/gitlab/trusted-certs/matrix-dev-private-ca.crt
+# The address job containers and this host use for GitLab: never loopback, because
+# 127.0.0.1 inside a job container is the container itself.
+matrix_gitlab_runner_gitlab_address: >-
+  {{ matrix_private_ip if matrix_endpoints.gitlab.https.same_node | default(false)
+     else matrix_endpoints.gitlab.https.host }}
+matrix_gitlab_runner_register_helper: /usr/local/sbin/matrix-register-runner

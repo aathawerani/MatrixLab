@@ -1,0 +1,3 @@
+---
+matrix_docker_keyring: /etc/apt/keyrings/docker.asc
+matrix_docker_repository: https://download.docker.com/linux/ubuntu

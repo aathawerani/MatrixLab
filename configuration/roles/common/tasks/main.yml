@@ -37,3 +37,20 @@
     mode: "0644"
   when: matrix_sysctls | default({}) | length > 0
   notify: Apply sysctl
+
+# Ubuntu's installer leaves about half of an LVM disk unallocated. Nodes that set
+# extend_root_lvm: true in the topology get the root volume grown to the whole disk.
+- name: Extend the root logical volume to use all free space
+  ansible.builtin.shell: |
+    set -eu
+    src=$(findmnt -n -o SOURCE /)
+    free=$(lvs --noheadings -o vg_free_count "$src" | tr -d ' ')
+    if [ "${free:-0}" -gt 0 ]; then
+      lvextend -r -l +100%FREE "$src"
+      echo EXTENDED
+    fi
+  args:
+    executable: /bin/bash
+  register: matrix_root_lvm
+  changed_when: "'EXTENDED' in matrix_root_lvm.stdout"
+  when: matrix_extend_root_lvm | default(false) | bool

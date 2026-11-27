@@ -73,3 +73,18 @@ Admin area: sign-up disabled, two-factor enforced, Web IDE single-origin fallbac
    `gitlab-runner reset-token --name matrix-dev-vm-02`.
 
 CPU and memory limits keep CI jobs from starving PostgreSQL on the same VM; `concurrent = 1`.
+
+## Windows clients
+
+Windows tools that use the system TLS library (`curl.exe`, Git configured for the Windows
+certificate store) reject a private CA with `CRYPT_E_NO_REVOCATION_CHECK`, because the CA
+publishes no revocation list. Use `curl.exe --ssl-no-revoke`, and
+`git config --global http.schannelCheckRevoke false` for Git over HTTPS. Browsers and Git over
+SSH are not affected.
+
+## Automation
+
+The `gitlab` role performs sections 1 and 2 when the topology sets
+`tls.certificate_strategy: local_ca`, and the `gitlab_runner` role installs the CA and a
+registration helper (`sudo matrix-register-runner`) for section 5. This path is exercised on the
+local lab; the reference environment was configured by hand before the role supported it.

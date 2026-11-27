@@ -19,19 +19,22 @@
   ansible.builtin.lineinfile:
     path: /etc/hosts
     regexp: '^\S+\s+{{ matrix_settings.gitlab_runner.hostname | regex_escape }}(\s|$)'
-    line: "{{ matrix_endpoints.gitlab.https.host }} {{ matrix_settings.gitlab_runner.hostname }}"
+    line: "{{ matrix_gitlab_runner_gitlab_address }} {{ matrix_settings.gitlab_runner.hostname }}"
     state: present
     create: false
+
+- name: Decide where the GitLab private CA certificate comes from
+  ansible.builtin.set_fact:
+    matrix_gitlab_runner_ca_supplied: "{{ (matrix_gitlab_tls_ca_certificate | default('') | string | length) > 0 }}"
 
 - name: Require private CA certificate for GitLab Runner
   ansible.builtin.assert:
     that:
-      - matrix_gitlab_tls_ca_certificate is defined
-      - matrix_gitlab_tls_ca_certificate | string | length > 0
+      - matrix_gitlab_runner_ca_supplied or (matrix_endpoints.gitlab.https.same_node | default(false))
     fail_msg: >-
       Supply matrix_gitlab_tls_ca_certificate through Ansible Vault or an
       approved certificate provider. The runner must trust the GitLab private CA.
-  no_log: true
+      (It is read from the GitLab host automatically only when both run on one node.)
 
 - name: Create apt keyring directory
   ansible.builtin.file:
@@ -59,11 +62,21 @@
   ansible.builtin.apt:
     update_cache: true
 
-- name: Install pinned GitLab Runner package
+- name: Install pinned GitLab Runner packages
   ansible.builtin.apt:
-    name: "{{ matrix_gitlab_runner_package_name }}={{ matrix_versions.gitlab_runner }}"
+    name:
+      - "{{ matrix_gitlab_runner_package_name }}={{ matrix_versions.gitlab_runner }}"
+      - "gitlab-runner-helper-images={{ matrix_versions.gitlab_runner }}"
     state: present
     allow_downgrade: false
+
+- name: Hold GitLab Runner packages so OS updates cannot upgrade them
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - "{{ matrix_gitlab_runner_package_name }}"
+    - gitlab-runner-helper-images
 
 - name: Create GitLab Runner certificate directory
   ansible.builtin.file:
@@ -73,7 +86,7 @@
     group: root
     mode: "0755"
 
-- name: Install private CA for GitLab Runner HTTPS trust
+- name: Install supplied private CA for GitLab Runner HTTPS trust
   ansible.builtin.copy:
     content: "{{ matrix_gitlab_tls_ca_certificate }}"
     dest: "{{ matrix_gitlab_runner_ca_dir }}/{{ matrix_settings.gitlab_runner.hostname }}.crt"
@@ -81,6 +94,18 @@
     group: root
     mode: "0644"
   no_log: true
+  when: matrix_gitlab_runner_ca_supplied
+  notify: Restart GitLab Runner
+
+- name: Install the co-located GitLab private CA for GitLab Runner HTTPS trust
+  ansible.builtin.copy:
+    src: "{{ matrix_gitlab_runner_local_ca_certificate }}"
+    remote_src: true
+    dest: "{{ matrix_gitlab_runner_ca_dir }}/{{ matrix_settings.gitlab_runner.hostname }}.crt"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not matrix_gitlab_runner_ca_supplied
   notify: Restart GitLab Runner
 
 - name: Ensure GitLab Runner configuration file exists without replacing registration
@@ -101,6 +126,15 @@
 
 - name: Apply pending GitLab Runner certificate changes
   ansible.builtin.meta: flush_handlers
+
+- name: Install the operator's registration helper
+  ansible.builtin.template:
+    src: matrix-register-runner.sh.j2
+    dest: "{{ matrix_gitlab_runner_register_helper }}"
+    owner: root
+    group: root
+    mode: "0750"
+  when: matrix_settings.gitlab_runner.registration is defined
 
 # Deliberately do not run `gitlab-runner register`: registration requires a
 # one-time token and explicit operator authorization. Existing config.toml is preserved.

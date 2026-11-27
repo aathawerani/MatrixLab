@@ -19,3 +19,25 @@ jobs:
         run: python -m pip install pyyaml jinja2
       - name: Run tests (includes the public-repository hygiene check)
         run: python -m unittest discover -s tests -v
+
+  ansible-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Ansible and the renderer's dependencies
+        run: python -m pip install "ansible-core>=2.16,<2.17" pyyaml jinja2
+      - name: Install required collections
+        run: ansible-galaxy collection install -r configuration/requirements.yml
+      - name: Render every environment and syntax-check the playbooks
+        run: |
+          set -e
+          for topology in environments/*/*/topology.yml; do
+            env_dir=$(dirname "$topology")
+            python scripts/render_environment.py "$env_dir"
+            inventory="generated/${env_dir#environments/}/inventory.yml"
+            (cd configuration && ansible-playbook -i "../$inventory" playbooks/site.yml --syntax-check)
+            (cd configuration && ansible-playbook -i "../$inventory" playbooks/preview.yml --syntax-check)
+          done
